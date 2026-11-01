@@ -1,0 +1,19 @@
+# build outputs
+build/
+build-*/
+dist/
+release/
+
+# IDE
+.qtcreator/
+*.user
+.vs/
+CMakeUserPresets.json
+
+# local artifacts
+*.ilk
+*.pdb
+AutoRun_Codex.exe.old-*
+
+# design reference images (not part of the published source)
+ref/
