@@ -70,7 +70,7 @@ cmd /c D:\QtWorkspace\AutoRun_Codex\release.cmd
 ```
 - 产物：`release\AutoRun_Codex-vX.Y.Z-win64\`（dist 内容 + `README.txt` 使用说明）、`release\AutoRun_Codex-vX.Y.Z-win64.zip`、同名 `.sha256`。
 - 脚本：`release.cmd` → `packaging\make-release.ps1`；使用说明模板在 `packaging\README.txt`（打包时复制为包内 `README.txt`）。
-- 发布：把 zip 上传到 GitHub Release（tag = 版本号，如 `v0.1.8`），仓库 <https://github.com/Rtyu3221cc/AutoRun_Codex>。
+- 发布：`powershell -NoProfile -ExecutionPolicy Bypass -File packaging\publish-release.ps1`（默认读 `main.cpp` 版本、用 `release\_release-notes-<版本>.md` 作为说明，自动创建 tag/Release 并上传 zip；需本机 GitHub 凭据可用）。仓库 <https://github.com/Rtyu3221cc/AutoRun_Codex>。
 - 仓库里 `dist/ build/ build-dsh/ .qtcreator/ release/ ref/` 均已 gitignore；源码中 `resources/`（含 8.4MB 字体）需要提交，否则别人构建不出同样界面。
 
 ---

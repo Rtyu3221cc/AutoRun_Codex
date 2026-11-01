@@ -77,7 +77,11 @@ Windows 桌面小工具：显示 Codex（ChatGPT 账号）的 5 小时 / 每周�
 2. 运行 `release.cmd`（默认从 `main.cpp` 读取版本号；也可 `release.cmd 0.1.9`）：
    - 生成 `release\AutoRun_Codex-vX.Y.Z-win64\`（dist 内容 + `README.txt` 使用说明）；
    - 压缩为 `release\AutoRun_Codex-vX.Y.Z-win64.zip`，并输出同名 `.sha256`。
-3. 把 zip 上传到 GitHub Release（tag 与版本号一致，如 `v0.1.8`）。仓库：<https://github.com/Rtyu3221cc/AutoRun_Codex>。
+3. 上传到 GitHub Release（tag 与版本号一致，如 `v0.1.8`）：
+   ```powershell
+   powershell -NoProfile -ExecutionPolicy Bypass -File packaging\publish-release.ps1
+   ```
+   默认从 `main.cpp` 读版本、用 `release\_release-notes-<版本>.md` 作为发布说明（没有则用简短说明）；需要本机已配置 GitHub 凭据（`git push` 可用）。仓库：<https://github.com/Rtyu3221cc/AutoRun_Codex>。
 4. 发布前自检：用一个干净的 `%APPDATA%`（或 `AR_SCREENSHOT_DIR` + 隔离 APPDATA）跑一次截图模式，确认能启动、能连 app-server。
 
 ## 使用

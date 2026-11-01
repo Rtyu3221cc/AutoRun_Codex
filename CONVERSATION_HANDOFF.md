@@ -101,10 +101,15 @@ Windows 桌面小工具：通过本机 Codex CLI 的 app-server JSON-RPC 显示 
   - `Compress-Archive` 生成 `release\AutoRun_Codex-vX.Y.Z-win64.zip` + 同名 `.sha256`。
 - **发布包自检**：用隔离 APPDATA 跑 `AR_SCREENSHOT_DIR` 截图模式，确认发布目录里的 exe 能独立启动（不依赖本机 Qt 环境）。
 - **Git 上传**：项目原本没有 `.git`；`.gitignore` 增加 `build/`、`dist/`、`release/`、`.qtcreator/`、`ref/`、`*.old-*` 等（构建产物/设计参考图不上传），提交源码 + docs + resources（含 8.4MB 字体，构建必需）并 push 到 main。
-- **GitHub Release**：tag `v0.1.8`，asset = `AutoRun_Codex-v0.1.8-win64.zip`。
+- **git 上传结果**：main 分支首个 commit `a578734`（75 files，约 9.6MB；`dist/ build/ release/ ref/ .qtcreator/` 均 ignore），tag `v0.1.8` 指向同一 commit。
+- **发布上传脚本**（新增，可复用）：`packaging\publish-release.ps1` —— 从 git credential manager 取 github.com 凭据（不落盘、不打印），GET Release，不存在则创建 tag/Release，再上传 zip；asset 已存在则跳过。
+- **GitHub Release**：<https://github.com/Rtyu3221cc/AutoRun_Codex/releases/tag/v0.1.8>
+  - asset：`AutoRun_Codex-v0.1.8-win64.zip`，45,893,237 bytes（约 43.8MB）；
+  - SHA256：`6C0FEEA1ADE643BDD7CD5AE576A2D884A8F9F93E82B35DD2890462F9CFD6A7CF`；
+  - 已实测 asset 可下载（HTTP 200）、README 中文在 GitHub 上渲染正常、仓库根目录无构建产物。
 - 文档：README 增加“下载 / 发布版”“发布流程”两节；HANDOFF 增加 3.5 发布打包；同步清理了文档里的个人路径/昵称（如实名昵称、`C:\Users\...` 等改成通用写法）。
 
-后续发版流程（每版）：改版本号 → build.cmd → deploy.cmd → release.cmd → 上传 zip 到新 Release。
+后续发版流程（每版）：改版本号 → `build.cmd` → `deploy.cmd` → `release.cmd` → `powershell -File packaging\publish-release.ps1`（发布说明写到 `release\_release-notes-<版本>.md`）→ `git commit/push`。
 
 ---
 
