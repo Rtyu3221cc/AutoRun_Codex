@@ -1,10 +1,10 @@
 # AutoRun Codex · 对话交接文档（换对话前先读我）
 
 > 用途：换新的 AI 对话时，把本文件路径发给新对话，就能接着干。
-> 最后更新：2026-11-02 18:35（JST）
+> 最后更新：2026-11-02 20:40（JST）
 > 项目路径：`D:\QtWorkspace\AutoRun_Codex`
 > 代码仓库：<https://github.com/Rtyu3221cc/AutoRun_Codex>
-> 当前版本：**v0.1.11**（已 build + deploy 到 `dist\AutoRun_Codex.exe`；运行中的程序还是 v0.1.10，需重启一次；GitHub Release 已发布）
+> 当前版本：**v0.1.12**（已 build + deploy 到 `dist\AutoRun_Codex.exe`；运行中的程序还是 v0.1.10，需重启一次；GitHub Release 已发布）
 > 技术细节见同目录 `HANDOFF.md`；本文件只记录“这个对话做了什么、现在停在哪、下一段对话怎么接”。
 
 ---
@@ -19,21 +19,21 @@ Windows 桌面小工具：通过本机 Codex CLI 的 app-server 显示 5h / 每�
 
 | 项 | 状态 |
 |---|---|
-| 运行中的程序 | `D:\QtWorkspace\AutoRun_Codex\dist\AutoRun_Codex.exe`，PID 18676，2026-11-02 17:17:10 启动（**v0.1.10；已部署 v0.1.11，需退出重启后生效**） |
+| 运行中的程序 | `D:\QtWorkspace\AutoRun_Codex\dist\AutoRun_Codex.exe`，PID 18676，2026-11-02 17:17:10 启动（**v0.1.10；已部署 v0.1.12，需退出重启后生效**） |
 | 数据目录 | `%APPDATA%\AutoRun_Codex\`（settings.json / jobs.json / auto-run-codex.log） |
 | 当前主题 / 缩放 | 深色；悬浮条缩放 90%；不透明度 85%；参考样式 |
 | 活动指示灯 | 17:17 启动日志：`活动指示灯：无活动对话`（当时没有对话在跑） |
 | 看守队列 | 1 条：线程 `01a19b1f-e721-7d83-ab34-19a2882ee8aa`「生成云间日麻测试 APK」，单次模式、state=Waiting、`nextTriggerAt=0`（只登记，等下次被限额打断再排期） |
-| dist 目录 | v0.1.11 exe + `AutoRun_Codex.exe.old-v010`（旧版 v0.1.10 备份，可删） |
-| 工作区 git | 最新提交为 v0.1.11（源码 + 文档，`git log -1`）；tags：v0.1.8 / v0.1.9 / v0.1.10 / v0.1.11 |
-| GitHub Release | v0.1.11：<https://github.com/Rtyu3221cc/AutoRun_Codex/releases/tag/v0.1.11>（asset/SHA256 见 Release 页面或 `release\AutoRun_Codex-v0.1.11-win64.zip.sha256`） |
+| dist 目录 | v0.1.12 exe + `AutoRun_Codex.exe.old-v011`（旧版 v0.1.11 备份）；`.old-v010` 是当前正在运行的 v0.1.10 镜像（重启后才能删） |
+| 工作区 git | 最新提交为 v0.1.12（源码 + 文档，`git log -1`）；tags：v0.1.8 / v0.1.9 / v0.1.10 / v0.1.11 / v0.1.12 |
+| GitHub Release | v0.1.12：<https://github.com/Rtyu3221cc/AutoRun_Codex/releases/tag/v0.1.12>（asset/SHA256 见 Release 页面或 `release\AutoRun_Codex-v0.1.12-win64.zip.sha256`） |
 | 最近额度（17:01 主窗口截图） | 5h 剩余约 41%（11-02 18:08 重置）、每周剩余约 8%（11-04 15:37 重置）、plan=plus、重置卡 3 张 |
 
 > 注意：额度数据会过期，不要拿上面的数字做验收；以程序实时显示为准。
 
 ---
 
-## 2. 本对话做了什么（v0.1.8 → v0.1.11，全部已 build / deploy / 发布）
+## 2. 本对话做了什么（v0.1.8 → v0.1.12，全部已 build / deploy / 发布）
 
 ### 2.1 v0.1.8：看守徽标随悬浮条缩放
 - 问题：把“悬浮条缩放”调到 50% 时，底部“看守中 N”文字和呼吸灯不跟着缩小（写死 12px/3.6px、行高下限 30px）。
@@ -71,8 +71,13 @@ Windows 桌面小工具：通过本机 Codex CLI 的 app-server 显示 5h / 每�
 - 改动：`ActivityState::Completed` 文案改为「完成」；`WatchBadge::stateBreathes()` 改为“非 Idle 即呼吸”——完成（蓝）和最近结束（绿）从常亮改为呼吸+涟漪；只有灰色“无活动对话”不呼吸。
 - 重新生成 `docs/activity-indicator.png`（六状态截图，含蓝色/绿色呼吸光晕）。
 
-### 2.5 发布与仓库（GitHub 上传 / 发版流程）
-- 项目从“没有 .git”到上传 <https://github.com/Rtyu3221cc/AutoRun_Codex>（public，main 分支），并发了 v0.1.8 / v0.1.9 / v0.1.10 / v0.1.11 四个 Release。
+### 2.5 v0.1.12：托盘通知 + 经典样式小尺寸修复
+- **Windows 托盘通知**：`JobEngine` 新增 `notifyRequested(title, message, warning)` 信号，续跑完成 / 失败重试 / 连续失败红灯 / 写锁等待 / 写锁释放 / 自动关闭桌面版时弹托盘气泡；`MainWindow` 用 `m_tray->showMessage(...)` 显示；设置新增 `trayNotifications`（默认 true，设置里可关）。
+- **经典样式小尺寸修复**：`RingWidget` 文字宽度改为按圆环净内径（`ringRect.width() - thickness`）×0.94 省略；`QuotaWidget` 在经典样式且 `widgetScale < 70%` 时改用短标题（“5h/周”）并隐藏环内倒计时，缩放跨阈值自动刷新；截图 `docs/classic-widget-50.png`。
+- 验证：经典样式 50/70/100% + 参考样式 50% 截图、设置对话框截图、隔离 APPDATA + 假锁触发的写锁托盘通知路径均无异常。
+
+### 2.6 发布与仓库（GitHub 上传 / 发版流程）
+- 项目从“没有 .git”到上传 <https://github.com/Rtyu3221cc/AutoRun_Codex>（public，main 分支），并发了 v0.1.8 / v0.1.9 / v0.1.10 / v0.1.11 / v0.1.12 五个 Release。
 - 新增发布脚本：
   - `release.cmd` → `packaging/make-release.ps1`：从 `dist\` 生成 `release\AutoRun_Codex-vX.Y.Z-win64.zip` + `.sha256`（版本号默认从 `main.cpp` 读取）。
   - `packaging/publish-release.ps1`：从 git credential manager 取 GitHub 凭据（不落盘/不打印），创建 tag/Release 并上传 zip。
@@ -84,12 +89,11 @@ Windows 桌面小工具：通过本机 Codex CLI 的 app-server 显示 5h / 每�
 ## 3. 待用户验收 / 下一步建议
 
 1. **活动指示灯验收**：重启后看悬浮条底部——无对话活动应为灰色“无活动对话”不呼吸；Codex 跑对话时绿黄“运行中”；对话结束后 5 分钟内蓝“完成”/绿“最近结束”（都带呼吸）；有历史限额中断对话时为红“异常中断”。对照 `docs/activity-indicator.png`。
-2. **写锁提示验收**：对一条看守点“立即续跑”，若桌面版正打开该对话，主窗口详情应显示“在桌面版里关闭这个对话或切换/退出桌面版”，且不亮红灯；关闭对话或离开电脑 5 分钟后自动续跑。
-3. **悬浮条缩放复查**（上一轮）：50% 下徽标/文字不溢出，100% 与旧版一致。
-4. 可选打磨（按用户反馈优先级）：
-   - 写锁等待/自动关闭桌面版加 Windows 托盘通知（现在只有日志）；
+2. **托盘通知验收**：重启后期望续跑完成/失败、写锁等待/释放时弹 Windows 托盘气泡；不想被打扰可在设置里关“续跑/写锁状态变化时显示 Windows 托盘通知”。
+3. **经典样式 50% 复查**：悬浮条样式设为“经典”、缩放 50%，环内应只显示百分比 + “5h/周”短标题（不再拥挤/压描边）；70% 以上恢复正常标题+倒计时。对照 `docs/classic-widget-50.png`。
+4. **悬浮条缩放复查**（更早一轮）：50% 下活动指示灯/文字不溢出，100% 与旧版一致。
+5. 可选打磨（按用户反馈优先级）：
    - 活动指示灯“等待回复”判定可再细化（目前 active 状态 + rollout 写入间隔推断）；
-   - 经典样式在 50% 时环内中文标题略挤（RingWidget 既有问题）；
    - 失败重试间隔做成设置项；周额度耗尽显式判断；
    - 开机自启（设置项已存在但未写注册表）、单测/协议回归脚本。
 
@@ -102,7 +106,8 @@ Windows 桌面小工具：通过本机 Codex CLI 的 app-server 显示 5h / 每�
 3. **自动关闭桌面版是“无人值守”妥协**：仅当用户离开（系统闲置 ≥5min）且目标对话空闲 ≥90s 时触发；如果桌面版同时在其它对话跑任务会被一起关掉（Codex 无逐对话释放接口）。可在设置关闭。
 4. **活动指示灯是推断**：“运行中/等待回复”依赖 rollout 文件活动 + app-server 状态；“完成/最近结束”是 5 分钟窗口。被忽略的对话不参与；很久以前限额中断没处理的对话会让红灯一直亮（提示去处理）。
 5. **旧版遗留 writer-lock 红灯（state=Failed）不会自动重试**：刻意避免擅自续跑用户可能已手动完成的对话；点一次“立即续跑”即可进入等待写锁逻辑。
-6. **用户偏好**：非常在意视觉细节（会截图指出）；要中文交流、结论优先；**不要擅自测试正在使用的对话/正在跑任务的 Codex 桌面版**（本对话里做测试时都是隔离 APPDATA + 假锁/假进程）。
+6. **托盘通知可关（v0.1.12）**：续跑/写锁事件都在“用户不在电脑前”时发生，只写日志难被看到；但通知频繁会打扰，所以默认开、设置可关，且写锁等待只在首次进入时通知。
+7. **用户偏好**：非常在意视觉细节（会截图指出）；要中文交流、结论优先；**不要擅自测试正在使用的对话/正在跑任务的 Codex 桌面版**（本对话里做测试时都是隔离 APPDATA + 假锁/假进程）。
 
 ---
 
@@ -152,13 +157,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File D:\QtWorkspace\AutoRun_Codex
 
 1. **活动灯为推断**：超长工具调用、rollout 尾部截断、坏时间戳可能让“运行中/等待回复/完成”有偏差；已加时间戳防御。
 2. **自动关闭桌面版的边界**：只会在用户离开 + 目标对话空闲时触发；桌面版其它对话正在跑任务时会被一起关掉；可在设置关闭（纯等待模式）。
-3. **写锁等待时没有托盘通知**：目前只有主窗口详情 + 日志；用户要求可再加气泡提醒。
-4. **经典样式 50% 文字拥挤**：RingWidget 环内中文标题在小尺寸贴边（参考/极简不受影响），未修。
-5. **旧 writer-lock 红灯不自动重试**：需要手动点“立即续跑”；这是刻意设计，避免擅自续跑已手动完成的对话。
-6. 周额度耗尽时 JobEngine 没有专门判断 secondary 100%（仍按 5h resetAt 触发，重试后红灯）。
-7. 开机自启设置项未实现（只保存字段，未写注册表）。
-8. 没有单元测试工程；弹性测试都是隔离 APPDATA 的 ad-hoc 回归。
-9. 日志偶发 `QPainter::end: Painter ended with N saved states`（v0.1.0 起既有，可忽略）。
+3. **托盘通知可关**：默认开启；不想被打扰可在设置里关闭“续跑/写锁状态变化时显示 Windows 托盘通知”。经典样式 50% 文字拥挤已在 v0.1.12 修复。
+4. **旧 writer-lock 红灯不自动重试**：需要手动点“立即续跑”；这是刻意设计，避免擅自续跑已手动完成的对话。
+5. 周额度耗尽时 JobEngine 没有专门判断 secondary 100%（仍按 5h resetAt 触发，重试后红灯）。
+6. 开机自启设置项未实现（只保存字段，未写注册表）。
+7. 没有单元测试工程；弹性测试都是隔离 APPDATA 的 ad-hoc 回归。
+8. 日志偶发 `QPainter::end: Painter ended with N saved states`（v0.1.0 起既有，可忽略）。
 
 ---
 
@@ -186,4 +190,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File D:\QtWorkspace\AutoRun_Codex
 
 ## 10. 一句话交接
 
-v0.1.11 已上线：悬浮条现在是对话活动指示灯（运行中/等待回复/中断/完成/最近结束/空闲；除灰色外都呼吸），写锁冲突自愈且提示清晰；下一个对话接手时先确认版本与运行状态，再按用户新反馈做增量修改 + 隔离测试 + 发版。
+v0.1.12 已上线：悬浮条是对话活动指示灯（运行中/等待回复/中断/完成/最近结束/空闲；除灰色外都呼吸），写锁冲突自愈且提示清晰，续跑/写锁事件会弹托盘通知，经典样式小尺寸不再拥挤；下一个对话接手时先确认版本与运行状态（当前运行中的还是 v0.1.10，需要重启），再按用户新反馈做增量修改 + 隔离测试 + 发版。

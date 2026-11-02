@@ -37,6 +37,7 @@ private:
     QCheckBox *m_floatingCheck = nullptr;
     QCheckBox *m_continuousCheck = nullptr;
     QCheckBox *m_writerLockCheck = nullptr;
+    QCheckBox *m_trayNotifyCheck = nullptr;
 };
 
 } // namespace arc

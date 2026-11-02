@@ -146,6 +146,12 @@ SettingsDialog::SettingsDialog(const AppSettings &settings, QWidget *parent)
             "不勾选则只等待你自己关闭桌面版/该对话。"));
     form->addRow(m_writerLockCheck);
 
+    m_trayNotifyCheck = new QCheckBox(QStringLiteral("续跑/写锁状态变化时显示 Windows 托盘通知"), this);
+    m_trayNotifyCheck->setChecked(m_settings.trayNotifications);
+    m_trayNotifyCheck->setToolTip(QStringLiteral(
+            "续跑完成、失败重试、写锁等待/释放、自动关闭桌面版等状态变化时，在系统托盘弹出气泡提醒。"));
+    form->addRow(m_trayNotifyCheck);
+
     root->addLayout(form);
 
     auto *hint = new QLabel(QStringLiteral("设置会保存到本程序配置目录，下次启动自动生效。"), this);
@@ -179,6 +185,7 @@ SettingsDialog::SettingsDialog(const AppSettings &settings, QWidget *parent)
         m_settings.showFloatingWidget = m_floatingCheck->isChecked();
         m_settings.continuousByDefault = m_continuousCheck->isChecked();
         m_settings.autoReleaseWriterLock = m_writerLockCheck->isChecked();
+        m_settings.trayNotifications = m_trayNotifyCheck->isChecked();
         accept();
     });
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);

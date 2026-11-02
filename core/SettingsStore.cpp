@@ -114,6 +114,8 @@ AppSettings SettingsStore::load()
         readInt(object, QStringLiteral("retryAttempts"), defaults.retryAttempts), 1, 5);
     settings.autoReleaseWriterLock = readBool(object, QStringLiteral("autoReleaseWriterLock"),
                                               defaults.autoReleaseWriterLock);
+    settings.trayNotifications = readBool(object, QStringLiteral("trayNotifications"),
+                                          defaults.trayNotifications);
     settings.autoStart = readBool(object, QStringLiteral("autoStart"), defaults.autoStart);
     settings.alwaysOnTop =
         readBool(object, QStringLiteral("alwaysOnTop"), defaults.alwaysOnTop);
@@ -158,6 +160,7 @@ void SettingsStore::save(const AppSettings &settings)
     object.insert(QStringLiteral("jitterSeconds"), settings.jitterSeconds);
     object.insert(QStringLiteral("retryAttempts"), settings.retryAttempts);
     object.insert(QStringLiteral("autoReleaseWriterLock"), settings.autoReleaseWriterLock);
+    object.insert(QStringLiteral("trayNotifications"), settings.trayNotifications);
     object.insert(QStringLiteral("autoStart"), settings.autoStart);
     object.insert(QStringLiteral("alwaysOnTop"), settings.alwaysOnTop);
     object.insert(QStringLiteral("showFloatingWidget"), settings.showFloatingWidget);

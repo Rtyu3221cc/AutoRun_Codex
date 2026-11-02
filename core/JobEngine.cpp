@@ -397,6 +397,12 @@ void JobEngine::handleWriterBlocked(ResumeJob &job, const QString &error, bool a
                                      m_autoReleaseWriterLock
                                              ? QStringLiteral("；若你离开电脑 ≥5 分钟，程序会自动关闭桌面版释放写锁")
                                              : QStringLiteral("；设置里已关闭“自动关闭桌面版”")));
+        emit notifyRequested(QStringLiteral("看守：等待写锁释放"),
+                             QStringLiteral("「%1」被 Codex 桌面版占用，正在等待锁释放。"
+                                            "请在 Codex 桌面版里关闭这个对话或切换到其他对话/退出桌面版，"
+                                            "锁释放后会自动继续。")
+                                     .arg(job.threadName.isEmpty() ? job.threadId : job.threadName),
+                             false);
     }
     saveState();
     emit jobStateChanged(job.threadId);
@@ -419,6 +425,10 @@ void JobEngine::processWriterBlocked(ResumeJob &job)
         emit jobsChanged();
         emit logMessage(QStringLiteral("「%1」的写锁已释放，立即续跑")
                                 .arg(job.threadName.isEmpty() ? job.threadId : job.threadName));
+        emit notifyRequested(QStringLiteral("看守：写锁已释放"),
+                             QStringLiteral("「%1」的写锁已释放，立即续跑")
+                                     .arg(job.threadName.isEmpty() ? job.threadId : job.threadName),
+                             false);
         execute(job);
         return;
     }
@@ -477,6 +487,10 @@ void JobEngine::processWriterBlocked(ResumeJob &job)
     const bool closed = closeCodexDesktopApp(&detail);
     if (closed) {
         emit logMessage(QStringLiteral("已自动关闭 Codex 桌面版（%1），等待写锁释放后续跑").arg(detail));
+        emit notifyRequested(QStringLiteral("看守：已自动关闭 Codex 桌面版"),
+                             QStringLiteral("为释放「%1」的写锁，已自动关闭 Codex 桌面版（%2），正在续跑。")
+                                     .arg(name, detail),
+                             false);
     } else {
         emit logMessage(QStringLiteral("自动关闭 Codex 桌面版失败（%1），继续等待写锁释放").arg(detail));
     }
@@ -501,6 +515,14 @@ void JobEngine::handleFailure(ResumeJob &job, const QString &error)
                             .arg(m_retryAttempts)
                             .arg(error)
                             .arg(m_retryDelaySeconds));
+        emit notifyRequested(QStringLiteral("续跑失败，稍后重试"),
+                             QStringLiteral("「%1」第 %2/%3 次续跑失败：%4；%5 秒后自动重试")
+                                     .arg(name)
+                                     .arg(job.cycleAttempts)
+                                     .arg(m_retryAttempts)
+                                     .arg(error)
+                                     .arg(m_retryDelaySeconds),
+                             false);
     } else {
         job.state = JobState::Failed;
         job.retryPending = false;
@@ -509,6 +531,12 @@ void JobEngine::handleFailure(ResumeJob &job, const QString &error)
                             .arg(name)
                             .arg(job.cycleAttempts)
                             .arg(error));
+        emit notifyRequested(QStringLiteral("续跑失败（红灯）"),
+                             QStringLiteral("「%1」连续 %2 次续跑失败：%3")
+                                     .arg(name)
+                                     .arg(job.cycleAttempts)
+                                     .arg(error),
+                             true);
     }
     saveState();
     emit jobStateChanged(job.threadId);
@@ -613,6 +641,9 @@ void JobEngine::onTurnCompleted(const QString &threadId, const QJsonObject &turn
     job->cycleAttempts = 0;
     job->retryPending = false;
     emit logMessage(QStringLiteral("「%1」续跑完成").arg(job->threadName));
+    emit notifyRequested(QStringLiteral("续跑完成"),
+                         QStringLiteral("「%1」续跑完成").arg(job->threadName),
+                         false);
     saveState();
     emit jobStateChanged(threadId);
     emit jobsChanged();

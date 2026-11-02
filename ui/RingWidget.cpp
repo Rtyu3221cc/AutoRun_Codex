@@ -227,7 +227,9 @@ void RingWidget::paintEvent(QPaintEvent *)
     if (hasSubtitle)
         totalHeight += subtitleMetrics.height();
 
-    const qreal textWidth = qMin<qreal>(width(), side * 0.94);
+    // 环内文字宽度不能超过圆环“净内径”，否则中文标题会被环描边压住/横穿。
+    const qreal innerDiameter = qMax<qreal>(1.0, ringRect.width() - thickness);
+    const qreal textWidth = qMin<qreal>(width(), innerDiameter * 0.94);
     const qreal textX = (width() - textWidth) / 2.0;
     qreal textY = rect().center().y() - totalHeight / 2.0;
 

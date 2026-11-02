@@ -15,6 +15,8 @@ struct AppSettings
     // Codex 桌面版占着 thread-writer-lock 时：true = 用户离开后自动关闭桌面版释放写锁再续跑；
     // false = 只等待用户自己关闭（不会结束桌面版进程）。
     bool autoReleaseWriterLock = true;
+    // 续跑完成/失败、写锁等待/释放、自动关闭桌面版等状态变化时显示 Windows 托盘通知。
+    bool trayNotifications = true;
     bool autoStart = false;          // 登录自启
     bool alwaysOnTop = true;         // 悬浮条置顶
     bool showFloatingWidget = true;

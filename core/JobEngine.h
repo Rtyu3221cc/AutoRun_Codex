@@ -48,6 +48,8 @@ public:
 signals:
     void jobsChanged();
     void logMessage(const QString &message);
+    // 需要弹 Windows 托盘通知的关键事件（续跑完成/失败、写锁等待/释放、自动关闭桌面版）。
+    void notifyRequested(const QString &title, const QString &message, bool warning);
     void jobStateChanged(const QString &threadId);
 
 private slots:

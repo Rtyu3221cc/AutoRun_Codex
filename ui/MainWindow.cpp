@@ -89,6 +89,15 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_catalog, &ThreadCatalog::errorOccurred, this, &MainWindow::showLog);
     connect(m_jobs, &JobEngine::jobsChanged, this, &MainWindow::onJobsChanged);
     connect(m_jobs, &JobEngine::logMessage, this, &MainWindow::showLog);
+    connect(m_jobs, &JobEngine::notifyRequested, this,
+            [this](const QString &title, const QString &message, bool warning) {
+                if (!m_settings.trayNotifications || !m_tray)
+                    return;
+                m_tray->showMessage(title, message,
+                                    warning ? QSystemTrayIcon::Warning
+                                            : QSystemTrayIcon::Information,
+                                    6000);
+            });
     connect(m_jobs, &JobEngine::jobStateChanged, this, [this](const QString &) { updateSelectionButtons(); });
 
     m_tickTimer = new QTimer(this);

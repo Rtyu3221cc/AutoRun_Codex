@@ -169,15 +169,19 @@ void QuotaWidget::setSnapshot(const RateLimitSnapshot &snapshot)
                           bool valid, int percent, qint64 resetsAt, bool fiveHourWindow,
                           bool exhausted) {
         if (ring) {
-            if (referenceStyle)
+            // 经典样式缩到 <70% 时环内空间不足：改用短标题并隐藏倒计时，避免中文压到环描边。
+            const bool compactClassic = !referenceStyle && m_style == QStringLiteral("classic")
+                    && m_scale < 70;
+            if (referenceStyle || compactClassic)
                 ring->setTitle(fiveHourWindow ? QStringLiteral("5h") : QStringLiteral("周"));
             else
                 ring->setTitle(fiveHourWindow ? QStringLiteral("5h 窗口") : QStringLiteral("每周"));
             ring->setRemainingMode(m_displayRemaining);
             ring->setPercent(valid ? percent : 0);
             ring->setPercentTextVisible(!referenceStyle);
-            ring->setSubtitle(referenceStyle ? QString()
-                                             : (valid ? formatCountdown(resetsAt) : QStringLiteral("--")));
+            ring->setSubtitle(referenceStyle || compactClassic
+                                      ? QString()
+                                      : (valid ? formatCountdown(resetsAt) : QStringLiteral("--")));
             ring->setTitleEmphasis(referenceStyle);
             ring->setAccentColor(valid ? kDefaultAccent : theme::textDim());
             ring->setExhausted(valid && exhausted);
@@ -653,6 +657,10 @@ void QuotaWidget::setScalePercent(int percent)
     }
     move(newX, newY);
     updateCreditDot();
+
+    // 经典样式缩放跨过 70% 阈值时需要切换“短标题/隐藏倒计时”，重跑一次数据刷新。
+    if (m_style == QStringLiteral("classic"))
+        setSnapshot(m_snapshot);
 }
 
 void QuotaWidget::applyDockEdge(const QString &edge)
