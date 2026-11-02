@@ -11,6 +11,7 @@ qt_standard_project_setup()
 set(APP_SOURCES
     main.cpp
     core/CodexPaths.cpp
+    core/CodexWriterLock.cpp
     core/JsonRpcProcess.cpp
     core/CodexClient.cpp
     core/AccountProfile.cpp
@@ -36,6 +37,7 @@ set(APP_SOURCES
 set(APP_HEADERS
     core/Types.h
     core/CodexPaths.h
+    core/CodexWriterLock.h
     core/SettingsStore.h
     core/WindowsAcrylic.h
     core/JsonRpcProcess.h

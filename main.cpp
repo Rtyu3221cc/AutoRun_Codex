@@ -12,6 +12,7 @@
 #include <QMutexLocker>
 #include <QStandardPaths>
 #include <QTextStream>
+#include <QTimer>
 
 namespace {
 QFile *g_logFile = nullptr;
@@ -54,7 +55,7 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("AutoRun Codex"));
     QApplication::setOrganizationName(QStringLiteral("AutoRunCodex"));
-    QApplication::setApplicationVersion(QStringLiteral("0.1.8"));
+    QApplication::setApplicationVersion(QStringLiteral("0.1.9"));
     QApplication::setQuitOnLastWindowClosed(false);
 
     installFileLogger();
@@ -69,5 +70,13 @@ int main(int argc, char *argv[])
 
     arc::MainWindow w;
     w.show();
+
+    // 自动化回归用：AR_AUTOTEST_EXIT_SECONDS=N 时 N 秒后自动退出（不写任何用户数据之外的状态）。
+    if (!qEnvironmentVariableIsEmpty("AR_AUTOTEST_EXIT_SECONDS")) {
+        bool ok = false;
+        const int seconds = qEnvironmentVariableIntValue("AR_AUTOTEST_EXIT_SECONDS", &ok);
+        if (ok && seconds > 0)
+            QTimer::singleShot(seconds * 1000, &app, []() { QCoreApplication::exit(0); });
+    }
     return QApplication::exec();
 }

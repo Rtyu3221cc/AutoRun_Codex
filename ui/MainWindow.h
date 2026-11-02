@@ -71,6 +71,7 @@ private:
     ThreadInfo currentThread() const;
     ResumeJob currentJobOrDefault() const;
     int failedJobCount() const;
+    int blockedJobCount() const;
     void applySettingsToUi();
     void updateThemeStyles();
     void saveSettings();

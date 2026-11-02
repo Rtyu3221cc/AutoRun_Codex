@@ -19,6 +19,7 @@
 #include <QApplication>
 #include <QComboBox>
 #include <QDateTime>
+#include <QDebug>
 #include <QDir>
 #include <QFont>
 #include <QFrame>
@@ -538,6 +539,7 @@ void MainWindow::applySettingsToUi()
     if (m_jobs) {
         m_jobs->setResetWaitSeconds(m_settings.jitterSeconds);
         m_jobs->setRetryAttempts(m_settings.retryAttempts);
+        m_jobs->setAutoReleaseWriterLock(m_settings.autoReleaseWriterLock);
     }
     theme::setDark(m_settings.uiTheme != QStringLiteral("light"));
     theme::applyApplicationTheme(*qApp);
@@ -742,8 +744,18 @@ void MainWindow::onThreadsSelectionChanged()
         QString attemptsText = QStringLiteral("累计 %1 次").arg(job.attempts);
         if (job.cycleAttempts > 0)
             attemptsText += QStringLiteral("，本轮第 %1 次").arg(job.cycleAttempts);
+        const QString stateText = job.writerBlocked ? QStringLiteral("等待写锁释放")
+                                                    : jobStateText(job.state);
         lines << QStringLiteral("看守: %1 · %2 · %3")
-                     .arg(resumeModeText(job.mode), jobStateText(job.state), attemptsText);
+                     .arg(resumeModeText(job.mode), stateText, attemptsText);
+        if (job.writerBlocked) {
+            lines << QStringLiteral("<span style='color:%1;'>Codex 桌面版正打开着该对话（thread 写锁被占用）；"
+                                    "%2</span>")
+                         .arg(theme::yellow().name(),
+                              m_settings.autoReleaseWriterLock
+                                      ? QStringLiteral("锁释放后自动续跑；若你已离开电脑，会自动关闭桌面版释放写锁")
+                                      : QStringLiteral("锁释放后自动续跑（可在设置里开启“自动关闭桌面版”）"));
+        }
         if (job.nextTriggerAt > 0)
             lines << QStringLiteral("下次触发: %1（%2）").arg(formatEpoch(job.nextTriggerAt),
                                                               formatCountdown(job.nextTriggerAt));
@@ -820,6 +832,12 @@ void MainWindow::onRunNowClicked()
     job.enabled = true;
     job.state = JobState::Ready;
     job.nextTriggerAt = 0;
+    // 手动“立即续跑”应重新获得完整的重试机会（与右键菜单的 JobEngine::requestRunNow 一致），
+    // 并清掉“等待写锁”状态，下一 tick 立刻重新探测。
+    job.cycleAttempts = 0;
+    job.retryPending = false;
+    job.writerBlocked = false;
+    job.writerReleaseAttempted = false;
     if (job.prompt.isEmpty())
         job.prompt = m_settings.defaultPrompt;
     m_jobs->addOrUpdateJob(job);
@@ -942,6 +960,9 @@ void MainWindow::updateQuotaHeader()
                                   .arg(runningThreads);
         if (failedJobs > 0)
             summary += QStringLiteral(" · %1 个续跑失败（红灯）").arg(failedJobs);
+        const int blockedJobs = blockedJobCount();
+        if (blockedJobs > 0)
+            summary += QStringLiteral(" · %1 个等待 Codex 桌面版释放写锁").arg(blockedJobs);
         m_watchSummaryLabel->setText(summary);
         return;
     }
@@ -1071,6 +1092,18 @@ int MainWindow::failedJobCount() const
     return failed;
 }
 
+int MainWindow::blockedJobCount() const
+{
+    if (!m_jobs)
+        return 0;
+    int blocked = 0;
+    for (const ResumeJob &job : m_jobs->jobs()) {
+        if (job.enabled && job.writerBlocked)
+            ++blocked;
+    }
+    return blocked;
+}
+
 ResumeJob MainWindow::currentJobOrDefault() const
 {
     const ThreadInfo info = currentThread();
@@ -1142,6 +1175,9 @@ void MainWindow::onIgnoreInterruptedClicked()
 
 void MainWindow::showLog(const QString &message)
 {
+    // 同时落盘到 auto-run-codex.log：否则界面上的“续跑失败/重试/等待写锁”等
+    // 关键调度日志在重启后丢失，排查问题时只剩 app-server 的 stderr。
+    qInfo().noquote() << QStringLiteral("[job] ") + message;
     if (!m_logView)
         return;
     const QString time = QDateTime::currentDateTime().toString(QStringLiteral("[HH:mm:ss] "));

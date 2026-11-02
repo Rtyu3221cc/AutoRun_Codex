@@ -1,7 +1,7 @@
 # AutoRun Codex 对话交接文档
 
-> 最后更新：2026-11-02 00:45（JST）
-> 当前版本：v0.1.8（开发中，可运行；悬浮条缩放适配（看守徽标/呼吸灯）+ HarmonyOS 统一字体 + 账号头像/昵称 + 重置卡到期预警 + UI 配色微调 + 续跑重试策略）
+> 最后更新：2026-11-02 13:00（JST）
+> 当前版本：v0.1.9（开发中，可运行；写锁冲突自愈 + 悬浮条缩放适配 + HarmonyOS 统一字体 + 账号头像/昵称 + 重置卡到期预警 + UI 配色微调 + 续跑重试策略）
 > 项目路径：`D:\QtWorkspace\AutoRun_Codex`
 > 运行产物：`D:\QtWorkspace\AutoRun_Codex\dist\AutoRun_Codex.exe`
 > 代码仓库：<https://github.com/Rtyu3221cc/AutoRun_Codex>（v0.1.8 起；发布包见 GitHub Releases）
@@ -108,7 +108,7 @@ AutoRun_Codex.exe
   - `thread/goal/get|set`（预留，尚未在 UI 中完整使用）
 - `turn/start` 带 `approvalPolicy=never`，避免无人值守时卡在审批。
 
-> 独立 app-server 的代价：桌面 app 当前打开的对话可能不会实时刷新，需要重开该对话查看进度；若桌面 app 持有线程写锁，resume 可能失败（见“已知问题”）。
+> 独立 app-server 的代价：桌面 app 当前打开的对话可能不会实时刷新，需要重开该对话查看进度；若桌面 app 持有线程写锁，resume 会报 `already has an active writer`——v0.1.9 起 JobEngine 会自动等待锁释放/按设置自动关闭桌面版（见 5.10）。
 
 ---
 
@@ -243,6 +243,31 @@ AutoRun_Codex.exe
 
 ---
 
+### 5.10 写锁冲突自愈（v0.1.9）
+
+- **背景（v0.1.8 实际踩到的坑）**：Codex 的 thread store 是单写者模型，桌面版把某个对话加载进会话后会独占 `~/.codex/thread-writer-locks/<threadId>.lock`（会话级持有，对话不在跑 turn 时也持有）。本程序用的是自己拉起的 `codex app-server`，去 `thread/resume` 就会返回 `thread-store conflict: thread ... already has an active writer`。旧版本把它当普通失败：2 分钟间隔重试 3 次都失败 → Failed/红灯，并且会白白消耗重试次数。
+- **修复**：
+  - 新增 `core/CodexWriterLock.*`：
+    - `isThreadWriterLockHeld(threadId)`：用 Win32 `CreateFileW(... share=0)` 探测锁文件是否被独占；可独占打开 = 没有写入者。
+    - `isThreadRecentlyActive(threadId, seconds)`：找该线程的 rollout 文件并看 mtime，判断对话是否仍在跑。
+    - `systemIdleSeconds()`：GetLastInputInfo，判断用户是否离开电脑。
+    - `closeCodexDesktopApp()`：枚举 WindowsApps\OpenAI.Codex 进程树（含桌面版拉起的 codex app-server），先 EnumWindows 发 WM_CLOSE 优雅退出，8 秒内不退则 TerminateProcess 整棵树。
+  - `core/JobEngine`：
+    - `ResumeJob` 新增 `writerBlocked / writerBlockedSince / writerReleaseAttempted`（持久化到 jobs.json）。
+    - 识别写锁：`execute()` 先探测锁（同时排除“本进程 app-server 自己加载过该线程”的情况，见 `m_ownLoadedThreads`）；resume 失败信息里含 `active writer`/`thread-store conflict` 也归入写锁冲突。
+    - 进入“等待写锁释放”：state=Waiting、`writerBlocked=true`，本轮重试次数回滚（不消耗 retryAttempts），不亮红灯；每个 tick 轮询锁，锁一释放立刻执行续跑。
+    - 自动释放：若开启设置 `autoReleaseWriterLock`，冲突宽限 60 秒后，且目标对话 rollout 已空闲 90 秒、系统闲置 ≥5 分钟时，自动关闭桌面版；关完 5 秒后复查锁是否释放。
+    - `notifyThreadState()` 对 writerBlocked 的 job 直接返回，避免被线程刷新重排。
+  - `ui/MainWindow`：设置接入；主窗口“立即续跑”现在会重置 `cycleAttempts/retryPending/writerBlocked`（与右键 requestRunNow 一致）；看守队列摘要增加“N 个等待 Codex 桌面版释放写锁”；详情页显示写锁状态说明；`showLog()` 同时写文件日志（`[job] ...`）。
+  - `ui/SettingsDialog` + `core/SettingsStore`：新增 `autoReleaseWriterLock`（默认 true，设置里可关）。
+- **验证（隔离 APPDATA + 假锁，不碰真实对话/桌面版）**：
+  - 测试 1（仅等待）：用 PowerShell 进程在 dummy thread 的锁文件上持锁 20 秒 → 启动 → 8 秒时 jobs.json 为 state=1、`writerBlocked=true`、`attempts=0`、`cycleAttempts=0`；持锁进程释放后 2 秒内自动发起 resume（dummy 线程报 `no rollout found`，属预期）→ 证明“锁释放即恢复”。
+  - 测试 2（自动关桌面版）：用 `AR_CODEX_DESKTOP_PID` 指向持锁的测试进程并开启自动释放 → AutoRun 在宽限 3 秒后自动把它结束（真实 ChatGPT 桌面版进程数前后都是 15，未受影响）→ 锁释放 → 立即续跑。
+  - 测试开关：`AR_WRITER_POLL_SECONDS` / `AR_WRITER_GRACE_SECONDS` / `AR_WRITER_IGNORE_USER_IDLE` / `AR_CODEX_DESKTOP_PID`（仅指定进程，不改配置）/ `AR_AUTOTEST_EXIT_SECONDS`（自动退出，用于回归脚本）。
+- **已知取舍**：自动关闭桌面版只会在“用户离开 + 目标对话空闲”时触发；如果用户一直坐在电脑前，程序只会等待写锁释放（主窗口/日志显示“等待写锁释放”），不会强行杀掉正在使用的桌面版。若桌面版同时在其它对话里跑任务，无法完全避免影响（设置可关闭该功能）。
+
+---
+
 ## 6. 数据与配置
 
 ### 6.1 settings.json 字段
@@ -259,6 +284,7 @@ AutoRun_Codex.exe
   "ignoredThreadIds": [],
   "jitterSeconds": 150,               // 额度重置后先等待多少秒再续跑（默认 2.5 分钟）
   "retryAttempts": 3,                 // 每轮最多尝试次数（首次 + 重试；失败间隔 2 分钟）
+  "autoReleaseWriterLock": true,      // v0.1.9：写锁被桌面版占用且用户离开时，自动关闭桌面版释放写锁
   "minimizeToTray": true,
   "showFloatingWidget": true,
   "uiTheme": "dark",
@@ -268,13 +294,13 @@ AutoRun_Codex.exe
 ```
 
 ### 6.2 jobs.json
-每个启用的看守任务一条记录；字段：threadId/threadName/prompt/mode/enabled/state/attempts/cycleAttempts/retryPending/nextTriggerAt/lastRunAt/lastError。
+每个启用的看守任务一条记录；字段：threadId/threadName/prompt/mode/enabled/state/attempts/cycleAttempts/retryPending/nextTriggerAt/lastRunAt/lastError，以及 v0.1.9 新增的 writerBlocked/writerBlockedSince/writerReleaseAttempted（写锁等待状态）。
 `state` 枚举：Disabled=0, Waiting=1, Ready=2, Running=3, Succeeded=4, Failed=5, Paused=6。
 
 ### 6.3 当前运行状态（交接时）
-- 已部署 **v0.1.8** 到 `dist\AutoRun_Codex.exe`（2026-11-02 00:45 替换成功）。
-- 部署时的旧实例（v0.1.7）仍在运行、锁住原 exe 且沙箱无法结束进程：原 exe 改名为 `dist\AutoRun_Codex.exe.old-v017`，**退出旧实例后重新启动 `dist\AutoRun_Codex.exe` 即为 v0.1.8**；之后可删除 `.old-v017`。
-- 当前界面缩放：设置 → 悬浮条缩放 = 50%（用户为验收 v0.1.8 的看守徽标缩放把它调到 50%）；100% 时新代码与旧版视觉一致。
+- 已部署 **v0.1.9** 到 `dist\AutoRun_Codex.exe`（2026-11-02 13:0x 替换；部署时 v0.1.8 实例仍在运行，旧 exe 改名 `dist\AutoRun_Codex.exe.old-v018`，退出旧实例后重启 `dist\AutoRun_Codex.exe` 即为 v0.1.9）。
+- 旧版本遗留的“写锁失败”看守（state=Failed，lastError 含 active writer）不会自动重试（刻意保留红灯，避免未经确认就续跑已手动完成的对话）；重启后点一次“立即续跑”即可：v0.1.9 会进入“等待写锁释放”，锁释放后自动继续。
+- 当前界面缩放：用户当前设置为 90%（范围 50~150）；100% 时新代码与旧版视觉一致。
 - 有 1 个启用的看守任务：线程 `01a18233…`（完善云间日麻装扮与结算界面），单次模式、状态 Waiting、`nextTriggerAt = 1793552911`（2026-11-02 02:08:31 JST）。到点且程序在运行才会执行，重启不会提前补跑；等该对话再次因限额中断时才会重新排期。
 - 另一个额度中断未看守线程：`01a1832e…`（2:00继续进行没做完的任务），状态“限额中断”。
 - 实测（2026-11-01 21:47 JST）：5h 剩余约 67%（11-02 02:06 重置）、每周剩余约 30%（11-04 15:37 重置）、plan=plus、重置卡 2 张；最近一张重置卡 11-07 00:34 到期（约 5.4 天后 → 黄色档、无小点）。界面当前为深色主题。
@@ -310,6 +336,10 @@ AutoRun_Codex.exe
    - 50%：修改前 64×190、徽标文字 12px 右侧被裁；修改后 64×177、文字约 8px、圆点/光晕/涟漪同比缩小并居中；
    - 100%：与旧版一致；140%：徽标随整体放大；
    - 参考/经典/极简三种样式在 50% 下均已检查；对比图 `docs/widget-scale-50.png`。
+12. **写锁冲突自愈验证（v0.1.9）**：隔离 APPDATA + 伪造 thread-writer-lock，未触碰真实对话与真实桌面版：
+   - 仅等待模式：持锁 20 秒期间 jobs.json 保持 `writerBlocked=true / attempts=0 / cycleAttempts=0 / state=Waiting`（不计失败、不亮红灯）；锁释放后 2 秒内自动发起 `thread/resume`（dummy 线程报 `no rollout found`，符合预期）；
+   - 自动释放模式：`AR_WRITER_GRACE_SECONDS=3` + `AR_CODEX_DESKTOP_PID=<持锁测试进程>` → AutoRun 在宽限后自动结束该进程、锁释放、立即续跑；真实 ChatGPT 桌面版进程数前后一致（15 → 15）；
+   - 日志验证：`[job] ... 被 Codex 桌面版占用 ... / 已自动关闭 Codex 桌面版 ... / 写锁已释放，立即续跑` 均落盘到 auto-run-codex.log。
 
 ---
 
@@ -329,17 +359,19 @@ AutoRun_Codex.exe
 12. **监控/通知**：续跑完成、失败没有 Windows 通知；只有日志和界面状态。
 13. **周额度**：周额度耗尽时 JobEngine 没有专门判断 secondary 100%，仍会按 5h resetAt 触发、重试 3 次后转红；后续应显式判断周额度已尽并直接说明。
 14. **经典样式小尺寸文字拥挤（v0.1.8 发现，未修）**：悬浮条缩放到 50% 附近时，经典样式圆环里的中文标题（“5h 窗口/每周”）会贴着描边、略显拥挤；RingWidget 内部字号按环径缩放但没有省略/隐藏策略。参考/极简样式不受影响。若用户反馈再处理。
+15. **自动关闭桌面版的边界（v0.1.9）**：写锁冲突时默认只会在“系统闲置 ≥5 分钟 + 目标对话空闲 ≥90 秒”时自动关闭 Codex 桌面版；如果桌面版同时在其它对话里执行任务，关闭会打断那些任务（无法逐对话释放写锁）。用户可在设置里关闭该行为（只等待锁释放）。
 
 ---
 
 ## 9. 下一步建议（Backlog）
 
-- [ ] 写锁冲突失败原因归类（writer lock / auth / 网络），并按原因决定是否重试。
+- [x] 写锁冲突归类与自愈（v0.1.9）：写锁冲突不再消耗重试次数/不亮红灯，自动等待释放；可配置“用户离开时自动关闭桌面版”。（auth/网络类失败仍按普通重试处理）
 - [ ] 重试间隔/次数做成设置项（当前间隔固定 2 分钟）；周额度耗尽停止并通知。
 - [ ] Windows 通知（托盘气泡）与开机自启（HKCU Run）。
 - [ ] 续跑完成后自动刷新主窗口/悬浮条状态。
 - [ ] 清理死代码（WindowsAcrylic、未用常量）。
-- [ ] 补自动化测试（协议层 + RolloutScanner 解析 + JobEngine 状态机）。
+- [ ] 补自动化测试（协议层 + RolloutScanner 解析 + JobEngine 状态机）；v0.1.9 的写锁路径已有两个隔离 APPDATA 的回归脚本思路可复用（见 5.10 验证）。
+- [ ] 写锁冲突时用 Windows 通知（托盘气泡）提醒“已自动关闭桌面版/等待中”，而不是只写日志。
 - [ ] 浅色主题其它细节打磨（可选“模糊”开关，默认关闭）。
 - [ ] 耗尽呼吸灯的颜色/强度/频率如觉得太抢眼，可再调 alpha 与周期。
 - [ ] 悬浮条缩放到 50%~70% 时经典样式环内中文标题拥挤（给 RingWidget 标题加 elide 或小尺寸隐藏副标题）。
@@ -366,6 +398,12 @@ AutoRun_Codex.exe
 - 续跑重试/失败告警测试：
   - 用临时 APPDATA + 手写 `jobs.json`（state=Failed, attempts=3）启动，可直接看红灯 UI；
   - 用不存在的 threadId + `AR_RETRY_DELAY_SECONDS=2`（`AR_RESET_WAIT_SECONDS` 可覆盖重置等待）可在 ~30 秒内跑完“3 次失败 → 红色告警”的完整状态机（这里故意用红色，指看守灯的失败告警）。
+- 写锁冲突自愈测试（v0.1.9，不碰真实对话/桌面版）：
+  - 用 PowerShell 在 `~/.codex/thread-writer-locks/<dummy-thread-id>.lock` 上以独占方式持锁（FileShare.None）模拟桌面版；
+  - `AR_WRITER_POLL_SECONDS=2`（轮询间隔）、`AR_WRITER_GRACE_SECONDS=3`（宽限）、`AR_WRITER_IGNORE_USER_IDLE=1`（测试时跳过“用户是否离开”检查）；
+  - `AR_CODEX_DESKTOP_PID=<持锁测试进程PID>`：把该进程当作“桌面版”，验证自动关闭路径（不会碰真实 ChatGPT 进程）；
+  - `AR_AUTOTEST_EXIT_SECONDS=N`：N 秒后自动退出，方便写回归脚本；
+  - 隔离 APPDATA 里放一条 dummy threadId 的 jobs.json（state=2 Ready）即可跑完整状态机。
 - 直接抓真实悬浮窗：用 PowerShell 枚举进程的可见窗口（不要按中文标题匹配，脚本编码会乱），取宽 60~200、高 100~450 的窗口，再 `CopyFromScreen`。
 - 快速验证额度/线程协议：可参考 DSH 工作区 `.recon` 下的 spike 脚本（`appserver-*.mjs`），它们用 Node 直接起 `codex.exe app-server --stdio` 发 JSON-RPC。
 - Qt6 坑：
@@ -396,6 +434,7 @@ AutoRun_Codex.exe
 13. **为什么改成“重置后再等 2~3 分钟”**：Codex 的 resets_at 是服务端给的预计时间，实际可用额度往往有几十秒~几分钟延迟；到点立即 resume 很容易拿到“仍被限额”，白白消耗一次尝试。默认等 150 秒能显著降低第一次就失败的概率。
 14. **为什么失败要重试 3 次再亮红灯**：网络抖动 / writer lock / 服务端延迟都可能是一次性的；2 分钟间隔 × 3 次能覆盖大部分瞬时故障。3 次都失败说明不是抖动，改为 Failed + 红灯并停止自动重排，避免用户以为看守正常却实际一直没续上。
 15. **为什么红灯后不自动等下一个窗口**：持续看守若静默等待，用户可能很久之后才发现一次都没续上；红灯 + 手动“立即续跑”让失败可见、可决策。
+16. **为什么写锁冲突要单独处理（v0.1.9）**：这不是续跑失败，而是 Codex 单写者模型的正常竞争——桌面版打开着对话就必然冲突。把它计入失败次数/亮红灯会误导用户，而且重试多少次都没用。正确做法是等待锁释放，并在用户确实离开时自动释放占用（关闭桌面版）；同时不把我们自己 app-server 已加载线程的写锁误判为冲突。
 
 ---
 

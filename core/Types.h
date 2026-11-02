@@ -194,6 +194,12 @@ struct ResumeJob
     qint64 lastRunAt = 0;
     QString lastError;
     QString turnId;
+
+    // Codex 桌面版占着 thread-writer-lock 时进入“等待写锁释放”状态：
+    // 不计入失败次数、不亮红灯；锁一释放就自动续跑。
+    bool writerBlocked = false;
+    qint64 writerBlockedSince = 0;
+    bool writerReleaseAttempted = false; // 本轮阻塞是否已经尝试关闭过桌面版
 };
 
 } // namespace arc

@@ -12,6 +12,9 @@ struct AppSettings
     bool continuousByDefault = false;
     int jitterSeconds = 150;         // 额度重置后先等待多少秒再发续跑（默认 2.5 分钟）
     int retryAttempts = 3;           // 每轮最多尝试次数（=首次+重试；失败间隔 2 分钟，用尽后看守灯转红）
+    // Codex 桌面版占着 thread-writer-lock 时：true = 用户离开后自动关闭桌面版释放写锁再续跑；
+    // false = 只等待用户自己关闭（不会结束桌面版进程）。
+    bool autoReleaseWriterLock = true;
     bool autoStart = false;          // 登录自启
     bool alwaysOnTop = true;         // 悬浮条置顶
     bool showFloatingWidget = true;

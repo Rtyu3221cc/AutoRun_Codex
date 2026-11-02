@@ -1,10 +1,10 @@
 # AutoRun Codex · 对话交接文档（换对话前先读我）
 
 > 用途：换新的 AI 对话时，把本文件路径发给新对话，就能接着干。
-> 最后更新：2026-11-02 01:10（JST）
+> 最后更新：2026-11-02 13:00（JST）
 > 项目路径：`D:\QtWorkspace\AutoRun_Codex`
 > 代码仓库：<https://github.com/Rtyu3221cc/AutoRun_Codex>（v0.1.8 首次上传）
-> 当前版本：**v0.1.8**（已 build + deploy 到 `dist\AutoRun_Codex.exe`，程序当前正在运行；已打 win64 zip 发布包并上传 GitHub Release）
+> 当前版本：**v0.1.9**（已 build + deploy 到 `dist\AutoRun_Codex.exe`；全新版需重启程序生效；已上传 GitHub Release）
 > 技术细节看同目录 `HANDOFF.md`；本文件只记录“这个对话里做了什么、现在停在哪、下一段对话该怎么接”。
 
 ---
@@ -111,17 +111,34 @@ Windows 桌面小工具：通过本机 Codex CLI 的 app-server JSON-RPC 显示 
 
 后续发版流程（每版）：改版本号 → `build.cmd` → `deploy.cmd` → `release.cmd` → `powershell -File packaging\publish-release.ps1`（发布说明写到 `release\_release-notes-<版本>.md`）→ `git commit/push`。
 
+### 1.5 写锁冲突自愈（2026-11-02 12:20 ~ 13:00，v0.1.9）
+
+用户反馈：看守任务续跑失败（红灯），问原因。排查结论：**Codex 桌面版打开着该对话，独占 thread 写锁**，本程序独立 app-server 的 `thread/resume` 被拒绝：`thread 01a18233... already has an active writer`。证据：
+- `~/.codex/thread-writer-locks/01a18233-....lock` 从 2026-11-01 21:05 桌面版启动后一直存在，且当时（11-02 12:16）仍无法被独占打开；
+- rollout 时间线显示该对话 11-01 23:46 之后没有 turn 在跑，02:08 首次续跑时锁仍被占用 → 锁是**会话级**的（桌面版打开着对话就持有），不是 turn 级；
+- 02:08/02:10/02:12 三次自动重试、07:31 一次手动重试都撞锁 → Failed；07:32 用户手动在桌面版继续了该对话。
+
+修复（v0.1.9）：
+- `core/CodexWriterLock.*`：锁探测（CreateFileW 独占打开）、rollout 最近活动判断、系统空闲时间、关闭 Codex 桌面版（WM_CLOSE → 8 秒后 TerminateProcess 进程树）。
+- `JobEngine`：写锁冲突不再算失败（回滚本轮尝试次数、不亮红灯），进入 `writerBlocked` 等待状态并轮询，锁释放即自动续跑；新增设置 `autoReleaseWriterLock`（默认开）：冲突宽限 60 秒 + 目标对话空闲 90 秒 + 系统闲置 ≥5 分钟时，自动关闭桌面版释放写锁。
+- 排除“自己的 app-server 已加载线程”的误判（`m_ownLoadedThreads`）。
+- 顺手修：主窗口“立即续跑”没重置 `cycleAttempts`，一次失败就直接红灯；`showLog` 现在同时写 `auto-run-codex.log`（以前 job 日志只在 UI 里）。
+- 验证：两个隔离 APPDATA + 伪造锁文件的回归（只等待 / 自动关闭），真实 ChatGPT 进程数前后一致（15 → 15）；测试开关写在 HANDOFF 5.10。
+- 发版：v0.1.9 已 build/deploy、打 zip 并上传 GitHub Release（v0.1.9）。
+
 ---
 
 ## 2. 当前配置与实机状态（交接时）
 
 `%APPDATA%\AutoRun_Codex\settings.json` 关键项：
-- `uiTheme = dark`，`displayRemaining = true`，`floatingStyle = reference`，`widgetOpacity = 85`，`dockEdge = right`，`widgetScale = 50`（用户为验收本次修复把缩放调到了 50%，范围 50~150）
+- `uiTheme = dark`，`displayRemaining = true`，`floatingStyle = reference`，`widgetOpacity = 85`，`dockEdge = right`，`widgetScale = 90`（范围 50~150；验收缩放时用户调过 50/90）
 - `jitterSeconds = 120`（重置后等待；最小 120），`retryAttempts = 3`
+- v0.1.9 新增 `autoReleaseWriterLock`（默认 true）：写锁被桌面版占用且用户离开时自动关闭桌面版释放写锁；旧 settings.json 没有该字段时按 true 处理
 
 真实额度（11-01 23:30 左右抓取）：5h 剩余约 **67%**（11-02 02:06 重置）、每周剩余约 **30%**（11-04 15:37 重置）、plan=plus、重置卡 2 张（最近到期 11-07 00:34 ≈ 5.4 天，黄色档）。
 
-> **部署状态（2026-11-02 01:00 更新）**：用户已在 00:47 退出旧实例并重新启动 `dist\AutoRun_Codex.exe`，当前运行的是 **v0.1.8**（PID 15608）；旧 exe `AutoRun_Codex.exe.old-v017` 已可删除（发布打包时也已排除）。
+> **部署状态（2026-11-02 13:05 更新）**：v0.1.9 构建产物已放进 `dist\AutoRun_Codex.exe`（旧 v0.1.8 exe 改名 `dist\AutoRun_Codex.exe.old-v018`，当前运行中的 PID 15608 仍是 v0.1.8）。**退出托盘旧实例 → 重新启动 `dist\AutoRun_Codex.exe` 即为 v0.1.9**；之后可删 `.old-v018`。
+> v0.1.9 已同时打 win64 zip 并上传 GitHub Release：<https://github.com/Rtyu3221cc/AutoRun_Codex/releases/tag/v0.1.9>（asset SHA256 `71A6B50A...5EB51D`，详见 Release 说明）。
 
 ---
 
@@ -129,18 +146,19 @@ Windows 桌面小工具：通过本机 Codex CLI 的 app-server JSON-RPC 显示 
 
 `jobs.json` 里有 **1 条启用的单次看守**：
 - 线程：`01a18233-fcb8-7521-b2aa-3c90fb9ebb37`（完善云间日麻装扮与结算界面）
-- state=Waiting、enabled=true、`nextTriggerAt = 1793552911`（= 2026-11-02 02:08:31 JST，即 5h 重置 02:06 + 等待 120 秒；交接时由运行中的实例排期，尚未到点）。
-- `JobEngine::onTick` 对 `Waiting && nextTriggerAt <= 0` 直接跳过；到点且程序在运行才会执行，**重启不会提前补跑**（除非交接时已过点）。
-- 只有当该对话再次因额度限额中断时，`notifyThreadState()` 才会按 `resetAt + 120s` 重新排期。
-- 交接时程序已启动且在运行（v0.1.8，`widgetScale = 50`）。
+- **当前 state=Failed（红灯）**：attempts=4、lastError=`恢复线程失败：thread ... already has an active writer`（2026-11-02 07:31 最后一次）；原因是 Codex 桌面版一直打开着该对话并持有 thread 写锁（详见 1.5）。
+- 该对话在 07:32 被用户手动在桌面版继续过、07:48 完成；所以这盏红灯只代表“自动续跑没成功”，不代表任务没继续。
+- v0.1.9 起不会再把它当失败；但**旧版本留下的 Failed 状态不会自动重试**（刻意不自动续跑已手动完成的对话）——重启 v0.1.9 后，如需看守请点一次“立即续跑”（会进入“等待写锁释放”，锁释放后自动继续）。
+- 交接时程序已启动且在运行（v0.1.8，`widgetScale = 90`）；重启后为 v0.1.9。
 
 ---
 
 ## 4. 下一步建议
 
-1. **等用户验收本次悬浮条缩放修复**：在设置 → 悬浮条缩放里把 50%~150% 来回拖，确认“看守中 N”文字和呼吸灯一起缩放、无溢出；100% 应与旧版一致（对比图 `docs/widget-scale-50.png`）。
-2. **等用户验收（上一轮遗留）**：橙点间距（5px）、弹卡无橙点、账号头像/昵称展示是否符合预期；若想显示桌面 app 里的 “Changc” 昵称，需要再找字段或加“手动昵称”设置。
+1. **等用户验收 v0.1.9 写锁自愈**：重启到 v0.1.9 后，对一条看守点“立即续跑”——若桌面版正打开该对话，应显示“等待写锁释放”（不亮红灯）；关闭桌面版里的对话或离开电脑 5 分钟后，应自动续跑。也可在设置里关掉“自动关闭桌面版”验证纯等待模式。
+2. **等用户验收（上一轮遗留）**：悬浮条缩放（50%~150%，对比图 `docs/widget-scale-50.png`）、橙点间距（5px）、弹卡无橙点、账号头像/昵称展示；若想显示桌面 app 里的 “Changc” 昵称，需要再找字段或加“手动昵称”设置。
 3. 可选打磨：
+   - 写锁冲突时加 Windows 托盘通知（“已自动关闭桌面版/正在等待写锁”），而不是只写日志；
    - “可用 x 张”后面直接显示最近到期时间（现在只在 tooltip 里）；
    - 给到期预警加设置开关/阈值可配置（当前阈值写死 2 天 / 7 天）；
    - **悬浮条缩放全量验收**：经典/极简样式在 50% 下的文字拥挤（经典环内中文标题）可再打磨；
@@ -187,14 +205,17 @@ D:\QtWorkspace\AutoRun_Codex\dist\AutoRun_Codex.exe
 - `ui/MainWindow.*`：header `m_creditLabel` 取色、截图 fake credit 数据、processEvents
 - `core/CodexClient.cpp`：`parseRateLimits()` 早已解析 `rateLimitResetCredits`（本次未改）
 - `ui/QuotaWidget.*` / `ui/QuotaCard.*` / `ui/PillProgress.*` / `ui/RingWidget.*` / `ui/DualRingWidget.*` / `ui/WatchBadge.*`：上一轮的 UI 相关文件
-- `core/JobEngine.*`：调度/等待/重试/红灯状态机
+- `core/JobEngine.*`：调度/等待/重试/红灯状态机；v0.1.9 新增写锁等待（writerBlocked）、`processWriterBlocked()`、`m_ownLoadedThreads`
+- `core/CodexWriterLock.*`（v0.1.9 新增）：thread 写锁探测、rollout 最近活动、系统空闲时间、关闭 Codex 桌面版
+- `ui/SettingsDialog.*` / `core/SettingsStore.*`：v0.1.9 新增 `autoReleaseWriterLock` 设置项
 
 ---
 
 ## 7. 已知坑 / 注意事项
 
 1. **deploy 前必须退出运行中的实例**，否则 dist\exe 被锁。
-2. 程序自己的 app-server 与 Codex 桌面 app 并发可能撞 `thread-writer-locks`；桌面 app 里已打开对话不一定实时刷新。
+2. 程序自己的 app-server 与 Codex 桌面 app 并发会撞 `thread-writer-locks`（桌面版打开着对话就持有写锁，且是会话级而不是 turn 级）；v0.1.9 已自动处理（等待/按设置关闭桌面版），但桌面 app 里已打开的对话仍不一定实时刷新。
+11. v0.1.9 的“自动关闭桌面版”默认开启，只在“系统闲置 ≥5 分钟 + 目标对话空闲 ≥90 秒”时触发；如果桌面版同时在其它对话跑任务会被一起关掉（Codex 没有逐对话释放写锁的接口），介意可在设置里关闭。
 3. 后端不保证返回重置卡明细（`credits` 可能为 null/截断）→ 颜色退化黄色、无小点，这是预期。
 4. 日志里偶发 `QPainter::end: Painter ended with N saved states`（v0.1.0 起既有，可忽略）。
 5. 用户很在意视觉细节，会直接截图指出问题；改颜色/动效后最好给截图 + 说明“改的是哪个元素”。

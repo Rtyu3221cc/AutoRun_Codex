@@ -2,6 +2,7 @@
 
 #include "core/CodexClient.h"
 #include "core/CodexPaths.h"
+#include "core/CodexWriterLock.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -28,6 +29,14 @@ bool isUsageLimitText(const QString &text)
         || text.contains(QStringLiteral("usage limit"), Qt::CaseInsensitive)
         || text.contains(QStringLiteral("rateLimitExceeded"), Qt::CaseInsensitive);
 }
+
+// Codex 单写者模型：对话被其他进程（通常是桌面版）加载时，thread/resume 会返回
+// "thread ... already has an active writer" / "thread-store conflict"。
+bool isWriterLockText(const QString &text)
+{
+    return text.contains(QStringLiteral("active writer"), Qt::CaseInsensitive)
+        || text.contains(QStringLiteral("thread-store conflict"), Qt::CaseInsensitive);
+}
 } // namespace
 
 JobEngine::JobEngine(CodexClient *client, QObject *parent)
@@ -38,6 +47,12 @@ JobEngine::JobEngine(CodexClient *client, QObject *parent)
     m_timer->setInterval(1000);
     connect(m_timer, &QTimer::timeout, this, &JobEngine::onTick);
     connect(m_client, &CodexClient::turnCompleted, this, &JobEngine::onTurnCompleted);
+    // app-server 退出/重连后，之前加载的会话都不在了，清空“自己持有写锁”的记录。
+    connect(m_client, &CodexClient::connectionStateChanged, this,
+            [this](bool ready, const QString &) {
+                if (!ready)
+                    m_ownLoadedThreads.clear();
+            });
     m_timer->start();
 
     // 开发/测试用：缩短等待时间，便于快速验证重试与失败告警。
@@ -53,6 +68,19 @@ JobEngine::JobEngine(CodexClient *client, QObject *parent)
         if (ok && value >= 0)
             m_resetWaitSeconds = value;
     }
+    // 写锁冲突相关的测试开关（缩短轮询/宽限时间，忽略“用户是否离开”）。
+    auto envInt = [](const char *name, int fallback) {
+        if (!qEnvironmentVariableIsSet(name))
+            return fallback;
+        bool ok = false;
+        const int value = qEnvironmentVariableIntValue(name, &ok);
+        return (ok && value >= 0) ? value : fallback;
+    };
+    m_writerPollSeconds = qMax(1, envInt("AR_WRITER_POLL_SECONDS", m_writerPollSeconds));
+    m_writerGraceSeconds = envInt("AR_WRITER_GRACE_SECONDS", m_writerGraceSeconds);
+    m_writerIdleSeconds = envInt("AR_WRITER_IDLE_SECONDS", m_writerIdleSeconds);
+    if (qEnvironmentVariableIsSet("AR_WRITER_IGNORE_USER_IDLE"))
+        m_respectUserIdle = false;
     loadState();
 }
 
@@ -84,6 +112,11 @@ void JobEngine::loadState()
         job.nextTriggerAt = static_cast<qint64>(object.value(QStringLiteral("nextTriggerAt")).toDouble());
         job.lastRunAt = static_cast<qint64>(object.value(QStringLiteral("lastRunAt")).toDouble());
         job.lastError = object.value(QStringLiteral("lastError")).toString();
+        job.writerBlocked = object.value(QStringLiteral("writerBlocked")).toBool(false);
+        job.writerBlockedSince =
+                static_cast<qint64>(object.value(QStringLiteral("writerBlockedSince")).toDouble());
+        job.writerReleaseAttempted =
+                object.value(QStringLiteral("writerReleaseAttempted")).toBool(false);
         if (!job.threadId.isEmpty())
             m_jobs.append(job);
     }
@@ -108,6 +141,9 @@ void JobEngine::saveState() const
         object.insert(QStringLiteral("nextTriggerAt"), static_cast<double>(job.nextTriggerAt));
         object.insert(QStringLiteral("lastRunAt"), static_cast<double>(job.lastRunAt));
         object.insert(QStringLiteral("lastError"), job.lastError);
+        object.insert(QStringLiteral("writerBlocked"), job.writerBlocked);
+        object.insert(QStringLiteral("writerBlockedSince"), static_cast<double>(job.writerBlockedSince));
+        object.insert(QStringLiteral("writerReleaseAttempted"), job.writerReleaseAttempted);
         array.append(object);
     }
     QDir().mkpath(appDataDir());
@@ -220,6 +256,8 @@ void JobEngine::requestRunNow(const QString &threadId)
     job->nextTriggerAt = 0;
     job->cycleAttempts = 0;
     job->retryPending = false;
+    job->writerBlocked = false;
+    job->writerReleaseAttempted = false;
     saveState();
     emit jobsChanged();
     emit logMessage(QStringLiteral("立即续跑：%1").arg(job->threadName.isEmpty() ? job->threadId : job->threadName));
@@ -253,6 +291,11 @@ void JobEngine::setRetryAttempts(int attempts)
     m_retryAttempts = qMax(1, attempts);
 }
 
+void JobEngine::setAutoReleaseWriterLock(bool enabled)
+{
+    m_autoReleaseWriterLock = enabled;
+}
+
 void JobEngine::notifyThreadState(const ThreadInfo &info)
 {
     ResumeJob *job = findJob(info.id);
@@ -265,6 +308,9 @@ void JobEngine::notifyThreadState(const ThreadInfo &info)
         return;
     // 正在等待“失败重试”时，不要被线程状态刷新重新算成 resetAt 计划（否则会提前/无限重试）。
     if (job->retryPending)
+        return;
+    // 正在等待写锁释放时同样不要被刷新重排（由 processWriterBlocked 自己决定何时续跑）。
+    if (job->writerBlocked)
         return;
     if (!info.interrupted)
         return;
@@ -307,6 +353,10 @@ void JobEngine::onTick()
             continue;
         if (job.state == JobState::Succeeded || job.state == JobState::Failed)
             continue;
+        if (job.writerBlocked) {
+            processWriterBlocked(job);
+            break;
+        }
         if (job.state == JobState::Waiting && job.nextTriggerAt > now)
             continue;
         if (job.state == JobState::Waiting && job.nextTriggerAt <= 0)
@@ -314,6 +364,112 @@ void JobEngine::onTick()
         execute(job);
         break;
     }
+}
+
+bool JobEngine::isWriterLockError(const QString &error)
+{
+    return isWriterLockText(error);
+}
+
+// 进入/保持在“等待写锁释放”状态：不计失败次数、不亮红灯。
+void JobEngine::handleWriterBlocked(ResumeJob &job, const QString &error, bool attemptCounted)
+{
+    const qint64 now = QDateTime::currentSecsSinceEpoch();
+    const bool first = !job.writerBlocked;
+    if (first) {
+        job.writerBlocked = true;
+        job.writerBlockedSince = now;
+        job.writerReleaseAttempted = false;
+    }
+    // 写锁冲突不是续跑失败：把 execute() 里刚加上的本轮计数回滚。
+    if (attemptCounted && job.cycleAttempts > 0)
+        --job.cycleAttempts;
+    job.state = JobState::Waiting;
+    job.retryPending = false;
+    job.nextTriggerAt = now + m_writerPollSeconds;
+    job.lastError = error;
+    if (first) {
+        emit logMessage(QStringLiteral(
+                                "「%1」的对话正被 Codex 桌面版占用（thread 写锁），本次不计失败次数；"
+                                "锁释放后会自动续跑%2")
+                                .arg(job.threadName.isEmpty() ? job.threadId : job.threadName,
+                                     m_autoReleaseWriterLock
+                                             ? QStringLiteral("（若你离开电脑，将自动关闭桌面版释放写锁）")
+                                             : QString()));
+    }
+    saveState();
+    emit jobStateChanged(job.threadId);
+    emit jobsChanged();
+}
+
+// 等待写锁期间：轮询锁是否释放；必要时（无人值守且已离开）关闭 Codex 桌面版。
+void JobEngine::processWriterBlocked(ResumeJob &job)
+{
+    const qint64 now = QDateTime::currentSecsSinceEpoch();
+
+    if (!isThreadWriterLockHeld(job.threadId)) {
+        // 锁已释放：立刻恢复续跑。
+        job.writerBlocked = false;
+        job.writerReleaseAttempted = false;
+        job.state = JobState::Ready;
+        job.nextTriggerAt = 0;
+        job.lastError.clear();
+        saveState();
+        emit jobsChanged();
+        emit logMessage(QStringLiteral("「%1」的写锁已释放，立即续跑")
+                                .arg(job.threadName.isEmpty() ? job.threadId : job.threadName));
+        execute(job);
+        return;
+    }
+
+    // 仍在锁中：保持轮询（下一次 tick 继续检查，锁释放可秒级恢复）。
+    if (!m_autoReleaseWriterLock) {
+        job.nextTriggerAt = now + m_writerPollSeconds;
+        saveState();
+        return;
+    }
+    if (job.writerReleaseAttempted) {
+        // 已尝试过关闭桌面版：继续等锁自然释放，不再重复杀进程。
+        job.nextTriggerAt = now + m_writerPollSeconds;
+        saveState();
+        return;
+    }
+    if (now - job.writerBlockedSince < m_writerGraceSeconds)
+        return; // 宽限期内先等用户自己关闭
+
+    // 目标对话仍在跑 turn（rollout 仍在写）时不能抢锁，否则会打断桌面版正在执行的任务。
+    if (isThreadRecentlyActive(job.threadId, 90)) {
+        if (now - job.writerBlockedSince >= m_writerGraceSeconds
+            && (now - job.writerBlockedSince) % qMax(1, m_writerPollSeconds * 4) < 2) {
+            emit logMessage(QStringLiteral("「%1」仍在 Codex 桌面版里运行，暂不关闭桌面版，等待其空闲")
+                                    .arg(job.threadName.isEmpty() ? job.threadId : job.threadName));
+        }
+        job.nextTriggerAt = now + m_writerPollSeconds;
+        saveState();
+        return;
+    }
+
+    // 用户还在电脑前时不要突然关掉桌面版（可用 AR_WRITER_IGNORE_USER_IDLE 测试时跳过）。
+    if (m_respectUserIdle && systemIdleSeconds() < static_cast<quint64>(m_writerIdleSeconds)) {
+        job.nextTriggerAt = now + m_writerPollSeconds;
+        saveState();
+        return;
+    }
+
+    job.writerReleaseAttempted = true;
+    saveState();
+    emit logMessage(QStringLiteral("「%1」的写锁被 Codex 桌面版占用且已无人使用，尝试自动关闭桌面版以释放写锁…")
+                            .arg(job.threadName.isEmpty() ? job.threadId : job.threadName));
+    QString detail;
+    const bool closed = closeCodexDesktopApp(&detail);
+    if (closed) {
+        emit logMessage(QStringLiteral("已自动关闭 Codex 桌面版（%1），等待写锁释放后续跑").arg(detail));
+    } else {
+        emit logMessage(QStringLiteral("自动关闭 Codex 桌面版失败（%1），继续等待写锁释放").arg(detail));
+    }
+    job.nextTriggerAt = now + 5; // 关完马上回来检查锁是否释放
+    saveState();
+    emit jobsChanged();
 }
 
 void JobEngine::handleFailure(ResumeJob &job, const QString &error)
@@ -348,6 +504,16 @@ void JobEngine::handleFailure(ResumeJob &job, const QString &error)
 
 void JobEngine::execute(ResumeJob &job)
 {
+    // 先探测写锁（不依赖 app-server）：被 Codex 桌面版占用时直接进入“等待写锁释放”，
+    // 不发起注定失败的 thread/resume，也不消耗重试次数。
+    // 注意：如果是本进程 app-server 自己加载过该线程（自己持有写锁），不能算冲突。
+    if (isThreadWriterLockHeld(job.threadId) && !m_ownLoadedThreads.contains(job.threadId)) {
+        handleWriterBlocked(job,
+                            QStringLiteral("thread %1 already has an active writer（被 Codex 桌面版占用）")
+                                    .arg(job.threadId),
+                            false);
+        return;
+    }
     if (!m_client || !m_client->isReady()) {
         job.lastError = QStringLiteral("app-server 未连接");
         job.nextTriggerAt = QDateTime::currentSecsSinceEpoch() + 30;
@@ -357,6 +523,7 @@ void JobEngine::execute(ResumeJob &job)
         emit logMessage(QStringLiteral("app-server 未连接，30 秒后重试「%1」").arg(job.threadName));
         return;
     }
+
     job.state = JobState::Running;
     job.retryPending = false;
     ++job.attempts;
@@ -382,9 +549,14 @@ void JobEngine::execute(ResumeJob &job)
             return;
         if (!ok) {
             --m_runningCount;
-            handleFailure(*job, QStringLiteral("恢复线程失败：%1").arg(error));
+            if (isWriterLockError(error))
+                handleWriterBlocked(*job, QStringLiteral("恢复线程失败：%1").arg(error), true);
+            else
+                handleFailure(*job, QStringLiteral("恢复线程失败：%1").arg(error));
             return;
         }
+        // 本进程的 app-server 现在加载了该线程（自己持有写锁），记录下来避免误判为桌面版冲突。
+        m_ownLoadedThreads.insert(threadId);
         m_client->startTurn(threadId, prompt, [this, threadId](bool turnOk, const QString &turnId,
                                                               const QString &turnError) {
             ResumeJob *job = findJob(threadId);
@@ -410,6 +582,8 @@ void JobEngine::onTurnCompleted(const QString &threadId, const QJsonObject &turn
     --m_runningCount;
     if (m_runningCount < 0)
         m_runningCount = 0;
+    job->writerBlocked = false;
+    job->writerReleaseAttempted = false;
 
     const QString status = turn.value(QStringLiteral("status")).toString();
     const QJsonObject error = turn.value(QStringLiteral("error")).toObject();

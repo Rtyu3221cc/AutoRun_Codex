@@ -137,6 +137,15 @@ SettingsDialog::SettingsDialog(const AppSettings &settings, QWidget *parent)
     m_continuousCheck->setChecked(m_settings.continuousByDefault);
     form->addRow(m_continuousCheck);
 
+    m_writerLockCheck = new QCheckBox(
+            QStringLiteral("写锁被 Codex 桌面版占用时自动关闭桌面版（推荐夜间无人值守）"), this);
+    m_writerLockCheck->setChecked(m_settings.autoReleaseWriterLock);
+    m_writerLockCheck->setToolTip(QStringLiteral(
+            "Codex 桌面版打开着某个对话时会独占该对话的写锁，本程序无法续跑。\n"
+            "勾选后：检测到写锁冲突且你已离开电脑（系统闲置 ≥5 分钟）时，自动关闭 Codex 桌面版释放写锁，再继续续跑；\n"
+            "不勾选则只等待你自己关闭桌面版/该对话。"));
+    form->addRow(m_writerLockCheck);
+
     root->addLayout(form);
 
     auto *hint = new QLabel(QStringLiteral("设置会保存到本程序配置目录，下次启动自动生效。"), this);
@@ -169,6 +178,7 @@ SettingsDialog::SettingsDialog(const AppSettings &settings, QWidget *parent)
         m_settings.autoStart = m_autostartCheck->isChecked();
         m_settings.showFloatingWidget = m_floatingCheck->isChecked();
         m_settings.continuousByDefault = m_continuousCheck->isChecked();
+        m_settings.autoReleaseWriterLock = m_writerLockCheck->isChecked();
         accept();
     });
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
