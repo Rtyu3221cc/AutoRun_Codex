@@ -309,7 +309,7 @@ AutoRun_Codex.exe
   "showFloatingWidget": true,
   "uiTheme": "dark",
   "widgetOpacity": 85,
-  "widgetScale": 50                  // 悬浮条缩放 50~150（设置里调；当前用户设为 50 验收 v0.1.8）
+  "widgetScale": 90                  // 悬浮条缩放 50~150（设置里调；当前用户设为 90）
 }
 ```
 
@@ -318,11 +318,12 @@ AutoRun_Codex.exe
 `state` 枚举：Disabled=0, Waiting=1, Ready=2, Running=3, Succeeded=4, Failed=5, Paused=6。
 
 ### 6.3 当前运行状态（交接时）
-- 已部署 **v0.1.10** 到 `dist\AutoRun_Codex.exe`（2026-11-02 17:1x 替换；部署时 v0.1.9 实例仍在运行，旧 exe 改名 `dist\AutoRun_Codex.exe.old-v019`，退出旧实例后重启 `dist\AutoRun_Codex.exe` 即为 v0.1.10）。
-- 用户已在 16:47 退出 v0.1.8、用 v0.1.9 重启；settings.json 已含 `autoReleaseWriterLock = true`、`widgetScale = 90`。
+- **当前运行 v0.1.10**：`dist\AutoRun_Codex.exe`（PID 18676，2026-11-02 17:17:10 启动）；旧 v0.1.9 exe 备份为 `dist\AutoRun_Codex.exe.old-v019`（可删）。
+- settings.json：`uiTheme=dark`、`widgetScale=90`、`autoReleaseWriterLock=true`、`displayRemaining=true`、`jitterSeconds=120`、`retryAttempts=3`。
 - 当前看守队列（交接时）：线程 `01a19b1f…`（生成云间日麻测试 APK），单次模式、状态 Waiting、`nextTriggerAt = 0`（只登记，等该对话下次被限额打断再排期）。
 - 之前那条 v0.1.8 遗留的 writer-lock 红灯（线程 `01a18233…`）已被用户移除/替换，不再是当前队列。
-- 实测（2026-11-01 21:47 JST）：5h 剩余约 67%（11-02 02:06 重置）、每周剩余约 30%（11-04 15:37 重置）、plan=plus、重置卡 2 张；最近一张重置卡 11-07 00:34 到期（约 5.4 天后 → 黄色档、无小点）。界面当前为深色主题。
+- 最近额度（2026-11-02 17:01 JST 主窗口截图）：5h 剩余约 41%（18:08 重置）、每周剩余约 8%（11-04 15:37 重置）、plan=plus、重置卡 3 张。界面为深色主题；启动日志显示 `活动指示灯：无活动对话`。
+- 发布状态：GitHub Release v0.1.10 已发布（<https://github.com/Rtyu3221cc/AutoRun_Codex/releases/tag/v0.1.10>），main = `813a391`。
 - 注意：如果某条看守的 nextTriggerAt 已过（>0 且小于当前时间），启动后会“补跑”一次；本机当前那条是 0，所以不会。
 
 ---
