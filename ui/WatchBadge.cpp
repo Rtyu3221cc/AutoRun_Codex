@@ -40,8 +40,8 @@ WatchBadge::WatchBadge(QWidget *parent)
 
 bool WatchBadge::stateBreathes(ActivityState state)
 {
-    return state == ActivityState::Running || state == ActivityState::WaitingReply
-            || state == ActivityState::Interrupted;
+    // 除“无活动对话（灰色）”外全部呼吸：运行中/等待回复/异常中断/完成/最近结束。
+    return state != ActivityState::Idle;
 }
 
 QColor WatchBadge::stateColor() const

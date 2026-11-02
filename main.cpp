@@ -55,7 +55,7 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("AutoRun Codex"));
     QApplication::setOrganizationName(QStringLiteral("AutoRunCodex"));
-    QApplication::setApplicationVersion(QStringLiteral("0.1.10"));
+    QApplication::setApplicationVersion(QStringLiteral("0.1.11"));
     QApplication::setQuitOnLastWindowClosed(false);
 
     installFileLogger();

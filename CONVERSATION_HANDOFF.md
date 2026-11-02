@@ -1,10 +1,10 @@
 # AutoRun Codex · 对话交接文档（换对话前先读我）
 
 > 用途：换新的 AI 对话时，把本文件路径发给新对话，就能接着干。
-> 最后更新：2026-11-02 17:45（JST）
+> 最后更新：2026-11-02 18:35（JST）
 > 项目路径：`D:\QtWorkspace\AutoRun_Codex`
 > 代码仓库：<https://github.com/Rtyu3221cc/AutoRun_Codex>
-> 当前版本：**v0.1.10**（已 build + deploy；用户已在 17:17 重启，程序正在运行 v0.1.10；GitHub Release 已发布）
+> 当前版本：**v0.1.11**（已 build + deploy 到 `dist\AutoRun_Codex.exe`；运行中的程序还是 v0.1.10，需重启一次；GitHub Release 已发布）
 > 技术细节见同目录 `HANDOFF.md`；本文件只记录“这个对话做了什么、现在停在哪、下一段对话怎么接”。
 
 ---
@@ -15,25 +15,25 @@ Windows 桌面小工具：通过本机 Codex CLI 的 app-server 显示 5h / 每�
 
 ---
 
-## 1. 当前实机状态（交接时：2026-11-02 17:45 JST）
+## 1. 当前实机状态（交接时：2026-11-02 18:35 JST）
 
 | 项 | 状态 |
 |---|---|
-| 运行中的程序 | `D:\QtWorkspace\AutoRun_Codex\dist\AutoRun_Codex.exe`，PID 18676，2026-11-02 17:17:10 启动（v0.1.10） |
+| 运行中的程序 | `D:\QtWorkspace\AutoRun_Codex\dist\AutoRun_Codex.exe`，PID 18676，2026-11-02 17:17:10 启动（**v0.1.10；已部署 v0.1.11，需退出重启后生效**） |
 | 数据目录 | `%APPDATA%\AutoRun_Codex\`（settings.json / jobs.json / auto-run-codex.log） |
 | 当前主题 / 缩放 | 深色；悬浮条缩放 90%；不透明度 85%；参考样式 |
 | 活动指示灯 | 17:17 启动日志：`活动指示灯：无活动对话`（当时没有对话在跑） |
 | 看守队列 | 1 条：线程 `01a19b1f-e721-7d83-ab34-19a2882ee8aa`「生成云间日麻测试 APK」，单次模式、state=Waiting、`nextTriggerAt=0`（只登记，等下次被限额打断再排期） |
-| dist 目录 | v0.1.10 exe + `AutoRun_Codex.exe.old-v019`（旧版备份，可删） |
-| 工作区 git | `main = 813a391`（v0.1.10），tags：v0.1.8 / v0.1.9 / v0.1.10；交接文档更新后会再有一个 docs commit |
-| GitHub Release | v0.1.10：<https://github.com/Rtyu3221cc/AutoRun_Codex/releases/tag/v0.1.10>（asset 45,924,535 B，SHA256 `A4D89A9C...EEC13FA`） |
+| dist 目录 | v0.1.11 exe + `AutoRun_Codex.exe.old-v010`（旧版 v0.1.10 备份，可删） |
+| 工作区 git | 最新提交为 v0.1.11（源码 + 文档，`git log -1`）；tags：v0.1.8 / v0.1.9 / v0.1.10 / v0.1.11 |
+| GitHub Release | v0.1.11：<https://github.com/Rtyu3221cc/AutoRun_Codex/releases/tag/v0.1.11>（asset/SHA256 见 Release 页面或 `release\AutoRun_Codex-v0.1.11-win64.zip.sha256`） |
 | 最近额度（17:01 主窗口截图） | 5h 剩余约 41%（11-02 18:08 重置）、每周剩余约 8%（11-04 15:37 重置）、plan=plus、重置卡 3 张 |
 
 > 注意：额度数据会过期，不要拿上面的数字做验收；以程序实时显示为准。
 
 ---
 
-## 2. 本对话做了什么（v0.1.8 → v0.1.10，全部已 build / deploy / 发布）
+## 2. 本对话做了什么（v0.1.8 → v0.1.11，全部已 build / deploy / 发布）
 
 ### 2.1 v0.1.8：看守徽标随悬浮条缩放
 - 问题：把“悬浮条缩放”调到 50% 时，底部“看守中 N”文字和呼吸灯不跟着缩小（写死 12px/3.6px、行高下限 30px）。
@@ -57,17 +57,22 @@ Windows 桌面小工具：通过本机 Codex CLI 的 app-server 显示 5h / 每�
   | 运行中 | 绿黄 | 呼吸+涟漪 | 任一对话 `info.running`（rollout 最近仍在写入） |
   | 等待回复 | 黄色 | 呼吸+涟漪 | 非 running 但 app-server thread 状态 `active`（等模型回复/长思考） |
   | 异常中断 | 红色 | 呼吸+涟漪 | 任一对话 `info.interrupted`（限额中断等） |
-  | 刚完成 | 蓝色 | 常亮 | 最近 5 分钟内有正常 `task_complete` |
-  | 最近结束 | 绿色 | 常亮 | 最近 5 分钟活动停止但无法确认完成（兜底） |
+  | 完成 | 蓝色 | 呼吸 | 最近 5 分钟内有正常 `task_complete` |
+  | 最近结束 | 绿色 | 呼吸 | 最近 5 分钟活动停止但无法确认完成（兜底） |
   | 无活动对话 | 灰色 | 不呼吸 | 以上都没有 |
-  - 优先级：异常中断 > 运行中 > 等待回复 > 刚完成 > 最近结束 > 空闲；被 `ignoredThreadIds` 忽略的对话不参与；5 分钟窗口可用 `AR_ACTIVITY_RECENT_SECONDS` 改。
-  - 数据：`RolloutState/ThreadInfo` 新增 `completedAt`（RolloutScanner 解析正常完成时间）；防御了“未来坏时间戳导致永远显示刚完成”。
+  - 优先级：异常中断 > 运行中 > 等待回复 > 完成 > 最近结束 > 空闲；被 `ignoredThreadIds` 忽略的对话不参与；5 分钟窗口可用 `AR_ACTIVITY_RECENT_SECONDS` 改。
+  - 数据：`RolloutState/ThreadInfo` 新增 `completedAt`（RolloutScanner 解析正常完成时间）；防御了“未来坏时间戳导致永远显示完成”。
   - 主窗口摘要追加「当前：…」；状态变化写 `活动指示灯：…` 日志；截图环境变量 `AR_SCREENSHOT_FAKE_ACTIVITY=`running|waiting|interrupted|completed|recent|idle`。
   - 截图：`docs/activity-indicator.png`（6 状态；100% 与 50% 缩放都检查过文字不溢出）。
 - 写锁提示（`JobEngine` + 主窗口详情）：明确写「在 Codex 桌面版里关闭这个对话或切换到其他对话/退出桌面版，锁释放后会自动继续」；日志每约 5 分钟提醒一次；旧版 writer-lock 红灯（state=Failed）也会显示处理方法。
 
-### 2.4 发布与仓库（GitHub 上传 / 发版流程）
-- 项目从“没有 .git”到上传 <https://github.com/Rtyu3221cc/AutoRun_Codex>（public，main 分支），并发了 v0.1.8 / v0.1.9 / v0.1.10 三个 Release。
+### 2.4 v0.1.11：活动指示灯微调
+- 用户反馈：“刚完成”改成“完成”；呼吸灯除了灰色都呼吸。
+- 改动：`ActivityState::Completed` 文案改为「完成」；`WatchBadge::stateBreathes()` 改为“非 Idle 即呼吸”——完成（蓝）和最近结束（绿）从常亮改为呼吸+涟漪；只有灰色“无活动对话”不呼吸。
+- 重新生成 `docs/activity-indicator.png`（六状态截图，含蓝色/绿色呼吸光晕）。
+
+### 2.5 发布与仓库（GitHub 上传 / 发版流程）
+- 项目从“没有 .git”到上传 <https://github.com/Rtyu3221cc/AutoRun_Codex>（public，main 分支），并发了 v0.1.8 / v0.1.9 / v0.1.10 / v0.1.11 四个 Release。
 - 新增发布脚本：
   - `release.cmd` → `packaging/make-release.ps1`：从 `dist\` 生成 `release\AutoRun_Codex-vX.Y.Z-win64.zip` + `.sha256`（版本号默认从 `main.cpp` 读取）。
   - `packaging/publish-release.ps1`：从 git credential manager 取 GitHub 凭据（不落盘/不打印），创建 tag/Release 并上传 zip。
@@ -78,7 +83,7 @@ Windows 桌面小工具：通过本机 Codex CLI 的 app-server 显示 5h / 每�
 
 ## 3. 待用户验收 / 下一步建议
 
-1. **活动指示灯验收**：重启后看悬浮条底部——无对话活动应为灰色“无活动对话”不呼吸；Codex 跑对话时绿黄“运行中”；对话结束后 5 分钟内蓝“刚完成/最近结束”；有历史限额中断对话时为红“异常中断”。对照 `docs/activity-indicator.png`。
+1. **活动指示灯验收**：重启后看悬浮条底部——无对话活动应为灰色“无活动对话”不呼吸；Codex 跑对话时绿黄“运行中”；对话结束后 5 分钟内蓝“完成”/绿“最近结束”（都带呼吸）；有历史限额中断对话时为红“异常中断”。对照 `docs/activity-indicator.png`。
 2. **写锁提示验收**：对一条看守点“立即续跑”，若桌面版正打开该对话，主窗口详情应显示“在桌面版里关闭这个对话或切换/退出桌面版”，且不亮红灯；关闭对话或离开电脑 5 分钟后自动续跑。
 3. **悬浮条缩放复查**（上一轮）：50% 下徽标/文字不溢出，100% 与旧版一致。
 4. 可选打磨（按用户反馈优先级）：
@@ -95,7 +100,7 @@ Windows 桌面小工具：通过本机 Codex CLI 的 app-server 显示 5h / 每�
 1. **为什么自己起 app-server**：桌面 app 没有可连的控制 socket；独立 app-server 是官方 CLI 路径。代价是单写者模型 → 写锁冲突（v0.1.9 已处理）。
 2. **写锁是会话级**：桌面版只要打开着对话就持有锁，即使对话没在跑 turn；所以“等 turn 跑完”不会释放锁，必须关闭该对话/退出桌面版（或程序自动关闭桌面版）。
 3. **自动关闭桌面版是“无人值守”妥协**：仅当用户离开（系统闲置 ≥5min）且目标对话空闲 ≥90s 时触发；如果桌面版同时在其它对话跑任务会被一起关掉（Codex 无逐对话释放接口）。可在设置关闭。
-4. **活动指示灯是推断**：“运行中/等待回复”依赖 rollout 文件活动 + app-server 状态；“刚完成/最近结束”是 5 分钟窗口。被忽略的对话不参与；很久以前限额中断没处理的对话会让红灯一直亮（提示去处理）。
+4. **活动指示灯是推断**：“运行中/等待回复”依赖 rollout 文件活动 + app-server 状态；“完成/最近结束”是 5 分钟窗口。被忽略的对话不参与；很久以前限额中断没处理的对话会让红灯一直亮（提示去处理）。
 5. **旧版遗留 writer-lock 红灯（state=Failed）不会自动重试**：刻意避免擅自续跑用户可能已手动完成的对话；点一次“立即续跑”即可进入等待写锁逻辑。
 6. **用户偏好**：非常在意视觉细节（会截图指出）；要中文交流、结论优先；**不要擅自测试正在使用的对话/正在跑任务的 Codex 桌面版**（本对话里做测试时都是隔离 APPDATA + 假锁/假进程）。
 
@@ -119,7 +124,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File D:\QtWorkspace\AutoRun_Codex
 - `AR_SCREENSHOT_DIR=<目录>`：启动 4 秒后抓主窗口/悬浮条/弹卡 PNG 并退出；
 - `AR_UI_THEME=dark|light`、`AR_SCREENSHOT_FORCE_PULSE=1`、`AR_SCREENSHOT_FAKE_REMAINING=0,37`、`AR_SCREENSHOT_FAKE_CREDIT_DAYS=1.5` 等见 HANDOFF 第 10 节；
 - `AR_SCREENSHOT_FAKE_ACTIVITY=running|waiting|interrupted|completed|recent|idle[:N]`：强制活动指示灯状态；
-- `AR_ACTIVITY_RECENT_SECONDS=300`：活动灯“刚完成/最近结束”窗口；
+- `AR_ACTIVITY_RECENT_SECONDS=300`：活动灯“完成/最近结束”窗口；
 - 写锁测试：`AR_WRITER_POLL_SECONDS`、`AR_WRITER_GRACE_SECONDS`、`AR_WRITER_IGNORE_USER_IDLE`、`AR_CODEX_DESKTOP_PID=<测试进程PID>`、`AR_AUTOTEST_EXIT_SECONDS=N`（详见 HANDOFF 5.10）；
 - 测试务必用隔离 APPDATA（复制一份 settings.json、jobs.json 写 `[]`），避免触发真实看守。
 
@@ -145,7 +150,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File D:\QtWorkspace\AutoRun_Codex
 
 ## 7. 已知问题 / 限制
 
-1. **活动灯为推断**：超长工具调用、rollout 尾部截断、坏时间戳可能让“运行中/等待回复/刚完成”有偏差；已加时间戳防御。
+1. **活动灯为推断**：超长工具调用、rollout 尾部截断、坏时间戳可能让“运行中/等待回复/完成”有偏差；已加时间戳防御。
 2. **自动关闭桌面版的边界**：只会在用户离开 + 目标对话空闲时触发；桌面版其它对话正在跑任务时会被一起关掉；可在设置关闭（纯等待模式）。
 3. **写锁等待时没有托盘通知**：目前只有主窗口详情 + 日志；用户要求可再加气泡提醒。
 4. **经典样式 50% 文字拥挤**：RingWidget 环内中文标题在小尺寸贴边（参考/极简不受影响），未修。
@@ -181,4 +186,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File D:\QtWorkspace\AutoRun_Codex
 
 ## 10. 一句话交接
 
-v0.1.10 已上线：悬浮条现在是对话活动指示灯（运行中/等待回复/中断/刚完成/最近结束/空闲），写锁冲突自愈且提示清晰；下一个对话接手时先确认版本与运行状态，再按用户新反馈做增量修改 + 隔离测试 + 发版。
+v0.1.11 已上线：悬浮条现在是对话活动指示灯（运行中/等待回复/中断/完成/最近结束/空闲；除灰色外都呼吸），写锁冲突自愈且提示清晰；下一个对话接手时先确认版本与运行状态，再按用户新反馈做增量修改 + 隔离测试 + 发版。

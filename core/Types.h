@@ -179,7 +179,7 @@ inline QString activityStateText(ActivityState state, int count)
     case ActivityState::Interrupted:
         return n > 1 ? QStringLiteral("异常中断 %1").arg(n) : QStringLiteral("异常中断");
     case ActivityState::Completed:
-        return n > 1 ? QStringLiteral("刚完成 %1").arg(n) : QStringLiteral("刚完成");
+        return n > 1 ? QStringLiteral("完成 %1").arg(n) : QStringLiteral("完成");
     case ActivityState::RecentlyEnded:
         return n > 1 ? QStringLiteral("最近结束 %1").arg(n) : QStringLiteral("最近结束");
     case ActivityState::Idle:
