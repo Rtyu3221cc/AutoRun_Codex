@@ -749,18 +749,28 @@ void MainWindow::onThreadsSelectionChanged()
         lines << QStringLiteral("看守: %1 · %2 · %3")
                      .arg(resumeModeText(job.mode), stateText, attemptsText);
         if (job.writerBlocked) {
-            lines << QStringLiteral("<span style='color:%1;'>Codex 桌面版正打开着该对话（thread 写锁被占用）；"
-                                    "%2</span>")
-                         .arg(theme::yellow().name(),
-                              m_settings.autoReleaseWriterLock
-                                      ? QStringLiteral("锁释放后自动续跑；若你已离开电脑，会自动关闭桌面版释放写锁")
-                                      : QStringLiteral("锁释放后自动续跑（可在设置里开启“自动关闭桌面版”）"));
+            lines << QStringLiteral("<span style='color:%1;'><b>等待写锁释放</b>：Codex 桌面版正打开着这个对话，"
+                                    "AutoRun 无法同时续跑（Codex 同一个对话只允许一个写入者）。</span>")
+                         .arg(theme::yellow().name());
+            lines << QStringLiteral("<b>你现在可以</b>：在 Codex 桌面版里<b>关闭这个对话</b>或切换到其他对话；"
+                                    "也可以直接退出桌面版。写锁释放后 AutoRun 会自动继续，不需要再点按钮。");
+            lines << QStringLiteral("如果你离开电脑 ≥5 分钟且该对话空闲，程序会自动关闭 Codex 桌面版来释放写锁%1。")
+                         .arg(m_settings.autoReleaseWriterLock
+                                      ? QString()
+                                      : QStringLiteral("（设置里已关闭“自动关闭桌面版”）"));
         }
         if (job.nextTriggerAt > 0)
             lines << QStringLiteral("下次触发: %1（%2）").arg(formatEpoch(job.nextTriggerAt),
                                                               formatCountdown(job.nextTriggerAt));
-        if (!job.lastError.isEmpty())
+        if (!job.lastError.isEmpty()) {
             lines << QStringLiteral("最近错误: %1").arg(job.lastError);
+            if (job.state == JobState::Failed
+                && job.lastError.contains(QStringLiteral("active writer"), Qt::CaseInsensitive)) {
+                lines << QStringLiteral("<span style='color:%1;'>这是旧版本把“桌面版占用写锁”当成失败留下的红灯；"
+                                        "点“立即续跑”后，v0.1.9 会进入等待写锁释放（不消耗重试次数），锁释放后自动继续。</span>")
+                             .arg(theme::yellow().name());
+            }
+        }
     } else if (info.interrupted) {
         lines << QStringLiteral("<span style='color:%1;'>该对话未加入看守，不会自动续跑；"
                                 "点“加入看守”或“立即续跑”。</span>")
@@ -963,6 +973,9 @@ void MainWindow::updateQuotaHeader()
         const int blockedJobs = blockedJobCount();
         if (blockedJobs > 0)
             summary += QStringLiteral(" · %1 个等待 Codex 桌面版释放写锁").arg(blockedJobs);
+        int activityCount = 0;
+        const ActivityState activity = computeActivityState(&activityCount);
+        summary += QStringLiteral(" · 当前：%1").arg(activityStateText(activity, activityCount));
         m_watchSummaryLabel->setText(summary);
         return;
     }
@@ -1030,6 +1043,12 @@ void MainWindow::updateQuotaHeader()
                               .arg(runningThreads);
     if (failedJobs > 0)
         summary += QStringLiteral(" · %1 个续跑失败（红灯）").arg(failedJobs);
+    const int blockedJobs = blockedJobCount();
+    if (blockedJobs > 0)
+        summary += QStringLiteral(" · %1 个等待 Codex 桌面版释放写锁").arg(blockedJobs);
+    int activityCount = 0;
+    const ActivityState activity = computeActivityState(&activityCount);
+    summary += QStringLiteral(" · 当前：%1").arg(activityStateText(activity, activityCount));
     m_watchSummaryLabel->setText(summary);
 }
 
@@ -1049,7 +1068,98 @@ void MainWindow::updateFloatingWidget()
             ++runningThreads;
     }
     m_floating->setWatchedCount(enabledJobs, runningThreads, failedJobCount());
+    int activityCount = 0;
+    const ActivityState activity = computeActivityState(&activityCount);
+    if (activity != m_lastActivityState || activityCount != m_lastActivityCount) {
+        m_lastActivityState = activity;
+        m_lastActivityCount = activityCount;
+        showLog(QStringLiteral("活动指示灯：%1").arg(activityStateText(activity, activityCount)));
+    }
+    m_floating->setActivityStatus(activity, activityCount);
     m_floating->setVisible(m_settings.showFloatingWidget);
+}
+
+ActivityState MainWindow::computeActivityState(int *count) const
+{
+    // 开发/截图用：AR_SCREENSHOT_FAKE_ACTIVITY=running|waiting|interrupted|completed|recent|idle[:N]
+    const QString fake = qEnvironmentVariable("AR_SCREENSHOT_FAKE_ACTIVITY").trimmed().toLower();
+    auto report = [count](ActivityState state, int n) {
+        if (count)
+            *count = qMax(1, n);
+        return state;
+    };
+    if (!fake.isEmpty()) {
+        const QStringList parts = fake.split(QLatin1Char(':'), Qt::SkipEmptyParts);
+        const QString name = parts.value(0);
+        const int n = parts.size() > 1 ? qMax(1, parts.value(1).toInt()) : 1;
+        if (name.startsWith(QStringLiteral("run")))
+            return report(ActivityState::Running, n);
+        if (name.startsWith(QStringLiteral("wait")))
+            return report(ActivityState::WaitingReply, n);
+        if (name.startsWith(QStringLiteral("interrupt")) || name.startsWith(QStringLiteral("abort")))
+            return report(ActivityState::Interrupted, n);
+        if (name.startsWith(QStringLiteral("complet")))
+            return report(ActivityState::Completed, n);
+        if (name.startsWith(QStringLiteral("recent")) || name.startsWith(QStringLiteral("end")))
+            return report(ActivityState::RecentlyEnded, n);
+        if (name.startsWith(QStringLiteral("idle")) || name.startsWith(QStringLiteral("none")))
+            return report(ActivityState::Idle, 0);
+    }
+
+    int recentSeconds = 300; // “刚完成/最近结束”的展示窗口：5 分钟
+    if (qEnvironmentVariableIsSet("AR_ACTIVITY_RECENT_SECONDS")) {
+        bool ok = false;
+        const int value = qEnvironmentVariableIntValue("AR_ACTIVITY_RECENT_SECONDS", &ok);
+        if (ok && value > 0)
+            recentSeconds = value;
+    }
+    const qint64 now = nowSec();
+    int interrupted = 0;
+    int running = 0;
+    int waitingReply = 0;
+    int completed = 0;
+    int recentlyEnded = 0;
+    for (const ThreadInfo &info : m_catalog->threads()) {
+        if (info.archived || info.id.isEmpty())
+            continue;
+        if (m_settings.ignoredThreadIds.contains(info.id))
+            continue;
+        if (info.interrupted) {
+            ++interrupted;
+            continue;
+        }
+        if (info.running) {
+            ++running;
+            continue;
+        }
+        // turn 已经开始但 rollout 最近没有写入：大概率在等模型回复（长时间思考/排队）。
+        if (info.statusType.compare(QStringLiteral("active"), Qt::CaseInsensitive) == 0) {
+            ++waitingReply;
+            continue;
+        }
+        if (info.completedAt > 0 && info.completedAt <= now
+            && now - info.completedAt <= recentSeconds) {
+            ++completed;
+            continue;
+        }
+        // 兜底：最近活动停止但无法确认是否正常完成（例如尾部被截断）。
+        if (info.completedAt <= 0 && info.lastEventAt > 0 && info.lastEventAt <= now
+            && now - info.lastEventAt <= recentSeconds) {
+            ++recentlyEnded;
+            continue;
+        }
+    }
+    if (interrupted > 0)
+        return report(ActivityState::Interrupted, interrupted);
+    if (running > 0)
+        return report(ActivityState::Running, running);
+    if (waitingReply > 0)
+        return report(ActivityState::WaitingReply, waitingReply);
+    if (completed > 0)
+        return report(ActivityState::Completed, completed);
+    if (recentlyEnded > 0)
+        return report(ActivityState::RecentlyEnded, recentlyEnded);
+    return report(ActivityState::Idle, 0);
 }
 
 void MainWindow::updateSelectionButtons()

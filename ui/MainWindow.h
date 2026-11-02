@@ -72,6 +72,8 @@ private:
     ResumeJob currentJobOrDefault() const;
     int failedJobCount() const;
     int blockedJobCount() const;
+    // 悬浮窗“活动指示灯”的全局状态：取所有对话里优先级最高的一项。
+    ActivityState computeActivityState(int *count) const;
     void applySettingsToUi();
     void updateThemeStyles();
     void saveSettings();
@@ -116,6 +118,8 @@ private:
     bool m_quitting = false;
     bool m_clientReady = false;
     bool m_clientStateKnown = false;
+    ActivityState m_lastActivityState = ActivityState::Idle;
+    int m_lastActivityCount = 0;
 };
 
 } // namespace arc

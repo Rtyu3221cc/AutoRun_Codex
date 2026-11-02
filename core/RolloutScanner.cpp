@@ -273,6 +273,10 @@ bool parseRolloutFile(const QString &path, qint64 modifiedAt, RolloutState &stat
                     fallbackResetAt = fallback;
             } else {
                 state.interrupted = false;
+                // 记录“最近一次正常完成”的时间：悬浮窗活动指示灯用它显示“刚完成”。
+                // 只接受不晚于当前时间太多的数据，避免坏时间戳让指示灯永远停在“刚完成”。
+                if (eventSec > 0 && eventSec <= nowSec() + 300)
+                    state.completedAt = eventSec;
             }
         } else if (payloadType == QStringLiteral("turn_aborted")) {
             sawLifecycle = true;

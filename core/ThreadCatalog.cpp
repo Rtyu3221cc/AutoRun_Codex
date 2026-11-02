@@ -102,6 +102,7 @@ void ThreadCatalog::finishRefresh(QList<ThreadInfo> threads)
         info.resetAt = state.resetAt;
         info.running = state.running;
         info.lastEventAt = state.lastEventAt;
+        info.completedAt = state.completedAt;
         info.lastLimitMessage = state.lastLimitMessage;
     }
 

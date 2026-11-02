@@ -1,7 +1,7 @@
 # AutoRun Codex 对话交接文档
 
-> 最后更新：2026-11-02 13:00（JST）
-> 当前版本：v0.1.9（开发中，可运行；写锁冲突自愈 + 悬浮条缩放适配 + HarmonyOS 统一字体 + 账号头像/昵称 + 重置卡到期预警 + UI 配色微调 + 续跑重试策略）
+> 最后更新：2026-11-02 17:15（JST）
+> 当前版本：v0.1.10（开发中，可运行；悬浮条活动指示灯 + 写锁提示改进 + 写锁冲突自愈 + 悬浮条缩放适配 + HarmonyOS 统一字体 + 账号头像/昵称 + 重置卡到期预警 + UI 配色微调 + 续跑重试策略）
 > 项目路径：`D:\QtWorkspace\AutoRun_Codex`
 > 运行产物：`D:\QtWorkspace\AutoRun_Codex\dist\AutoRun_Codex.exe`
 > 代码仓库：<https://github.com/Rtyu3221cc/AutoRun_Codex>（v0.1.8 起；发布包见 GitHub Releases）
@@ -264,7 +264,27 @@ AutoRun_Codex.exe
   - 测试 1（仅等待）：用 PowerShell 进程在 dummy thread 的锁文件上持锁 20 秒 → 启动 → 8 秒时 jobs.json 为 state=1、`writerBlocked=true`、`attempts=0`、`cycleAttempts=0`；持锁进程释放后 2 秒内自动发起 resume（dummy 线程报 `no rollout found`，属预期）→ 证明“锁释放即恢复”。
   - 测试 2（自动关桌面版）：用 `AR_CODEX_DESKTOP_PID` 指向持锁的测试进程并开启自动释放 → AutoRun 在宽限 3 秒后自动把它结束（真实 ChatGPT 桌面版进程数前后都是 15，未受影响）→ 锁释放 → 立即续跑。
   - 测试开关：`AR_WRITER_POLL_SECONDS` / `AR_WRITER_GRACE_SECONDS` / `AR_WRITER_IGNORE_USER_IDLE` / `AR_CODEX_DESKTOP_PID`（仅指定进程，不改配置）/ `AR_AUTOTEST_EXIT_SECONDS`（自动退出，用于回归脚本）。
+- **提示文案（v0.1.10 改进）**：之前“等待写锁释放”太抽象；现在主窗口详情会直接写「在 Codex 桌面版里关闭这个对话或切换到其他对话/退出桌面版」，并说明锁释放后会自动继续；日志每约 5 分钟提醒一次；旧版本 writer-lock 红灯（state=Failed）也会显示“这是旧版本遗留，点立即续跑即可”。
 - **已知取舍**：自动关闭桌面版只会在“用户离开 + 目标对话空闲”时触发；如果用户一直坐在电脑前，程序只会等待写锁释放（主窗口/日志显示“等待写锁释放”），不会强行杀掉正在使用的桌面版。若桌面版同时在其它对话里跑任务，无法完全避免影响（设置可关闭该功能）。
+
+---
+
+### 5.11 悬浮条活动指示灯（v0.1.10）
+
+- **背景**：原来悬浮条底部的“● 看守中 N”呼吸灯只表示“有几个看守任务”，和时间/活动无关；用户要求改成“当前是否有对话正在运行”的全局指示灯。
+- **新语义**（`WatchBadge` 重写为活动指示灯，文字+圆点随状态变化，仍随悬浮条缩放等比缩放）：
+  | 状态 | 颜色 | 动画 | 判定 |
+  |---|---|---|---|
+  | 运行中 | 绿黄 `theme::lime()` | 呼吸+涟漪 | 任一对话 `info.running`（rollout 最近仍在写入） |
+  | 等待回复 | 黄色 `theme::yellow()` | 呼吸+涟漪 | 非 running，但 app-server thread 状态为 `active`（turn 已开始、rollout 最近无写入=等模型回复） |
+  | 异常中断 | 红色 `theme::red()` | 呼吸+涟漪 | 任一对话 `info.interrupted`（限额中断等） |
+  | 刚完成 | 蓝色 `theme::blue()` | 常亮 | 任一对话最近 5 分钟内 `completedAt`（正常 task_complete） |
+  | 最近结束 | 绿色 `theme::green()` | 常亮 | 最近 5 分钟活动停止、但 `completedAt` 未知（兜底） |
+  | 无活动对话 | 灰色 | 不呼吸 | 以上都没有 |
+- **优先级**：异常中断 > 运行中 > 等待回复 > 刚完成 > 最近结束 > 空闲；被 `ignoredThreadIds` 忽略的对话不参与统计。窗口默认 5 分钟，可用 `AR_ACTIVITY_RECENT_SECONDS` 覆盖。
+- **数据补充**：`RolloutState/ThreadInfo` 新增 `completedAt`（最后一次正常完成的 turn 时间），由 RolloutScanner 解析 `task_complete/turn_complete`（非限额错误）时写入；刻意忽略明显晚于当前时间的坏时间戳（曾导致指示灯永远停在“刚完成”）。
+- **其他**：主窗口摘要末尾追加「当前：运行中/等待回复/…」；活动状态变化时写一条 `[job] 活动指示灯：…` 日志；截图/调试可用 `AR_SCREENSHOT_FAKE_ACTIVITY=running|waiting|interrupted|completed|recent|idle[:N]` 强制某一状态。
+- **验证**：截图模式分别渲染 6 种状态（100% 与 50% 缩放），见 `docs/activity-indicator.png`；真实数据下能正确从「无活动对话」切到「刚完成」（有对话在 5 分钟内正常结束）。语义是推断：等待回复/最近结束为启发式，可能与极端情况有偏差。
 
 ---
 
@@ -298,11 +318,10 @@ AutoRun_Codex.exe
 `state` 枚举：Disabled=0, Waiting=1, Ready=2, Running=3, Succeeded=4, Failed=5, Paused=6。
 
 ### 6.3 当前运行状态（交接时）
-- 已部署 **v0.1.9** 到 `dist\AutoRun_Codex.exe`（2026-11-02 13:0x 替换；部署时 v0.1.8 实例仍在运行，旧 exe 改名 `dist\AutoRun_Codex.exe.old-v018`，退出旧实例后重启 `dist\AutoRun_Codex.exe` 即为 v0.1.9）。
-- 旧版本遗留的“写锁失败”看守（state=Failed，lastError 含 active writer）不会自动重试（刻意保留红灯，避免未经确认就续跑已手动完成的对话）；重启后点一次“立即续跑”即可：v0.1.9 会进入“等待写锁释放”，锁释放后自动继续。
-- 当前界面缩放：用户当前设置为 90%（范围 50~150）；100% 时新代码与旧版视觉一致。
-- 有 1 个启用的看守任务：线程 `01a18233…`（完善云间日麻装扮与结算界面），单次模式、状态 Waiting、`nextTriggerAt = 1793552911`（2026-11-02 02:08:31 JST）。到点且程序在运行才会执行，重启不会提前补跑；等该对话再次因限额中断时才会重新排期。
-- 另一个额度中断未看守线程：`01a1832e…`（2:00继续进行没做完的任务），状态“限额中断”。
+- 已部署 **v0.1.10** 到 `dist\AutoRun_Codex.exe`（2026-11-02 17:1x 替换；部署时 v0.1.9 实例仍在运行，旧 exe 改名 `dist\AutoRun_Codex.exe.old-v019`，退出旧实例后重启 `dist\AutoRun_Codex.exe` 即为 v0.1.10）。
+- 用户已在 16:47 退出 v0.1.8、用 v0.1.9 重启；settings.json 已含 `autoReleaseWriterLock = true`、`widgetScale = 90`。
+- 当前看守队列（交接时）：线程 `01a19b1f…`（生成云间日麻测试 APK），单次模式、状态 Waiting、`nextTriggerAt = 0`（只登记，等该对话下次被限额打断再排期）。
+- 之前那条 v0.1.8 遗留的 writer-lock 红灯（线程 `01a18233…`）已被用户移除/替换，不再是当前队列。
 - 实测（2026-11-01 21:47 JST）：5h 剩余约 67%（11-02 02:06 重置）、每周剩余约 30%（11-04 15:37 重置）、plan=plus、重置卡 2 张；最近一张重置卡 11-07 00:34 到期（约 5.4 天后 → 黄色档、无小点）。界面当前为深色主题。
 - 注意：如果某条看守的 nextTriggerAt 已过（>0 且小于当前时间），启动后会“补跑”一次；本机当前那条是 0，所以不会。
 
@@ -340,6 +359,7 @@ AutoRun_Codex.exe
    - 仅等待模式：持锁 20 秒期间 jobs.json 保持 `writerBlocked=true / attempts=0 / cycleAttempts=0 / state=Waiting`（不计失败、不亮红灯）；锁释放后 2 秒内自动发起 `thread/resume`（dummy 线程报 `no rollout found`，符合预期）；
    - 自动释放模式：`AR_WRITER_GRACE_SECONDS=3` + `AR_CODEX_DESKTOP_PID=<持锁测试进程>` → AutoRun 在宽限后自动结束该进程、锁释放、立即续跑；真实 ChatGPT 桌面版进程数前后一致（15 → 15）；
    - 日志验证：`[job] ... 被 Codex 桌面版占用 ... / 已自动关闭 Codex 桌面版 ... / 写锁已释放，立即续跑` 均落盘到 auto-run-codex.log。
+13. **活动指示灯验证（v0.1.10）**：隔离 APPDATA + `AR_SCREENSHOT_FAKE_ACTIVITY` 分别渲染 6 种状态（100% / 50% 缩放均检查文字不溢出），见 `docs/activity-indicator.png`；真实数据下启动后日志出现 `活动指示灯：无活动对话` → `活动指示灯：刚完成`（5 分钟内有对话正常结束），并修复过一处“未来时间戳导致永远显示刚完成”的判定 bug。
 
 ---
 
@@ -360,6 +380,7 @@ AutoRun_Codex.exe
 13. **周额度**：周额度耗尽时 JobEngine 没有专门判断 secondary 100%，仍会按 5h resetAt 触发、重试 3 次后转红；后续应显式判断周额度已尽并直接说明。
 14. **经典样式小尺寸文字拥挤（v0.1.8 发现，未修）**：悬浮条缩放到 50% 附近时，经典样式圆环里的中文标题（“5h 窗口/每周”）会贴着描边、略显拥挤；RingWidget 内部字号按环径缩放但没有省略/隐藏策略。参考/极简样式不受影响。若用户反馈再处理。
 15. **自动关闭桌面版的边界（v0.1.9）**：写锁冲突时默认只会在“系统闲置 ≥5 分钟 + 目标对话空闲 ≥90 秒”时自动关闭 Codex 桌面版；如果桌面版同时在其它对话里执行任务，关闭会打断那些任务（无法逐对话释放写锁）。用户可在设置里关闭该行为（只等待锁释放）。
+16. **活动指示灯是推断（v0.1.10）**：“运行中”来自 rollout 文件活动，“等待回复”依赖 app-server 的 active 状态 + 最近的 rollout 写入间隔，“刚完成/最近结束”是 5 分钟窗口启发式；极端情况（超长工具调用、rollout 尾部截断、坏时间戳）会有偏差。被忽略的对话不参与统计；若某条很久以前限额中断的对话一直没处理，红色会持续存在（这是提示去处理它）。
 
 ---
 
@@ -394,7 +415,8 @@ AutoRun_Codex.exe
   - `AR_SCREENSHOT_DIALOGS=1`：顺带抓取设置 / 线程设置对话框（检查浅色主题可读性）；
   - `AR_SCREENSHOT_SWITCH_THEME=light|dark`：弹卡可见时切换主题，抓 `*-switched.png`；
   - `AR_SCREENSHOT_CLOSE=1`（配合 `AR_SCREENSHOT_REOPEN=1`）：抓收回动画中间帧并在收回后再次打开，验证第二次弹出尺寸正确。
-  - **悬浮条缩放验收（v0.1.8）**：在隔离 APPDATA 的 settings.json 里把 `widgetScale` 设为 50 / 100 / 140，配 `AR_SCREENSHOT_DIR` + `AR_SCREENSHOT_FORCE_PULSE=1` + `AR_SCREENSHOT_FAKE_REMAINING=67,30` 启动，分别抓三种缩放的 `quota-widget.png`；`AR_SCREENSHOT_FORCE_PULSE` 会让“看守中 1”出现，便于检查徽标/呼吸灯是否随缩放变化。
+  - **悬浮条缩放验收（v0.1.8）**：在隔离 APPDATA 的 settings.json 里把 `widgetScale` 设为 50 / 100 / 140，配 `AR_SCREENSHOT_DIR` + `AR_SCREENSHOT_FAKE_REMAINING=67,30` 启动，分别抓三种缩放的 `quota-widget.png`。
+  - **活动指示灯验收（v0.1.10）**：`AR_SCREENSHOT_FAKE_ACTIVITY=running|waiting|interrupted|completed|recent|idle`（可加 `:N` 指定数量）强制渲染某一状态；也可用 `AR_ACTIVITY_RECENT_SECONDS` 调整“刚完成/最近结束”的展示窗口（默认 300）。
 - 续跑重试/失败告警测试：
   - 用临时 APPDATA + 手写 `jobs.json`（state=Failed, attempts=3）启动，可直接看红灯 UI；
   - 用不存在的 threadId + `AR_RETRY_DELAY_SECONDS=2`（`AR_RESET_WAIT_SECONDS` 可覆盖重置等待）可在 ~30 秒内跑完“3 次失败 → 红色告警”的完整状态机（这里故意用红色，指看守灯的失败告警）。
@@ -435,6 +457,7 @@ AutoRun_Codex.exe
 14. **为什么失败要重试 3 次再亮红灯**：网络抖动 / writer lock / 服务端延迟都可能是一次性的；2 分钟间隔 × 3 次能覆盖大部分瞬时故障。3 次都失败说明不是抖动，改为 Failed + 红灯并停止自动重排，避免用户以为看守正常却实际一直没续上。
 15. **为什么红灯后不自动等下一个窗口**：持续看守若静默等待，用户可能很久之后才发现一次都没续上；红灯 + 手动“立即续跑”让失败可见、可决策。
 16. **为什么写锁冲突要单独处理（v0.1.9）**：这不是续跑失败，而是 Codex 单写者模型的正常竞争——桌面版打开着对话就必然冲突。把它计入失败次数/亮红灯会误导用户，而且重试多少次都没用。正确做法是等待锁释放，并在用户确实离开时自动释放占用（关闭桌面版）；同时不把我们自己 app-server 已加载线程的写锁误判为冲突。
+17. **为什么把“看守中 N”呼吸灯换成活动指示灯（v0.1.10）**：旧灯只表达“有几个看守任务”，既不反映对话是否真在运行，也无法提示异常中断/刚完成；用户实际关心的是“现在有没有对话在跑/在等我/出问题了”。新指示灯按全局最高优先级显示运行中/等待回复/异常中断/刚完成/最近结束/空闲，颜色语义与主窗口状态一致；仍然保留“看守队列”数字在弹卡和主窗口里，不丢信息。
 
 ---
 

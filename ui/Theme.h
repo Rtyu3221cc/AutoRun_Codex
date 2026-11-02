@@ -29,6 +29,7 @@ QColor green();
 QColor lime(); // 绿黄（剩余 50%~75% 档）
 QColor yellow();
 QColor red();
+QColor blue(); // “对话正常结束”的活动指示灯（深色亮蓝 / 浅色深蓝）
 QColor track();
 
 // 重置卡临期小点（橙色，深浅主题通用）。

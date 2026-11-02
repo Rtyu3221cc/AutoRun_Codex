@@ -274,10 +274,6 @@ void QuotaWidget::setWatchedCount(int count, int runningCount, int failedCount)
     m_running = qMax(0, runningCount);
     m_failed = qMax(0, failedCount);
 
-    if (m_watchBadge) {
-        m_watchBadge->setWatchedCount(m_watched);
-        m_watchBadge->setFailedCount(m_failed);
-    }
     const bool pulsed = m_running > 0;
     if (auto *primaryRing = findChild<RingWidget *>(QStringLiteral("ringPrimary")))
         primaryRing->setPulseActive(pulsed);
@@ -288,6 +284,12 @@ void QuotaWidget::setWatchedCount(int count, int runningCount, int failedCount)
     // 卡片可见时冻结更新，避免重建/闪烁；打开时 showCard() 会同步。
     if (m_card && !m_card->isVisible())
         m_card->setWatchedCount(m_watched, m_running, m_failed);
+}
+
+void QuotaWidget::setActivityStatus(ActivityState state, int count)
+{
+    if (m_watchBadge)
+        m_watchBadge->setActivity(state, count);
 }
 
 void QuotaWidget::setAlwaysOnTopHintEnabled(bool on)

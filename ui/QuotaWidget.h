@@ -32,6 +32,8 @@ public:
     void setBackgroundOpacity(int percent);
     void applyThemeStyles();
     void setWatchedCount(int count, int runningCount, int failedCount = 0);
+    // 悬浮条底部置顶“活动指示灯”：由 MainWindow 根据全局对话活动计算后传入。
+    void setActivityStatus(ActivityState state, int count);
     void setAlwaysOnTopHintEnabled(bool on);
     void setScalePercent(int percent);
     void applyDockEdge(const QString &edge); // left/right/top/bottom/auto

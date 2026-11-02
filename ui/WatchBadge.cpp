@@ -8,6 +8,16 @@
 
 namespace arc {
 
+namespace {
+
+QColor idleDotColor()
+{
+    // 无活动对话：灰色、不呼吸。
+    return theme::isDark() ? QColor(92, 97, 107) : QColor(148, 154, 164);
+}
+
+} // namespace
+
 WatchBadge::WatchBadge(QWidget *parent)
     : QWidget(parent)
 {
@@ -20,7 +30,7 @@ WatchBadge::WatchBadge(QWidget *parent)
     m_animation->setEasingCurve(QEasingCurve::InOutSine);
     m_animation->setLoopCount(-1);
 
-    // 外圈：只扩散、不收缩的涟漪动画。
+    // 外圈：只扩散、不收缩的涟漪动画（仅“活动类”状态呼吸时启用）。
     m_rippleAnimation = new QPropertyAnimation(this, "ripple", this);
     m_rippleAnimation->setDuration(1800);
     m_rippleAnimation->setStartValue(0.0);
@@ -28,10 +38,34 @@ WatchBadge::WatchBadge(QWidget *parent)
     m_rippleAnimation->setLoopCount(-1);
 }
 
-void WatchBadge::setWatchedCount(int count)
+bool WatchBadge::stateBreathes(ActivityState state)
 {
-    m_watched = qMax(0, count);
-    if (m_watched > 0) {
+    return state == ActivityState::Running || state == ActivityState::WaitingReply
+            || state == ActivityState::Interrupted;
+}
+
+QColor WatchBadge::stateColor() const
+{
+    switch (m_state) {
+    case ActivityState::Running:       return theme::lime();
+    case ActivityState::WaitingReply:  return theme::yellow();
+    case ActivityState::Interrupted:   return theme::red();
+    case ActivityState::Completed:     return theme::blue();
+    case ActivityState::RecentlyEnded: return theme::green();
+    case ActivityState::Idle:
+        break;
+    }
+    return idleDotColor();
+}
+
+void WatchBadge::setActivity(ActivityState state, int count)
+{
+    const int normalized = qMax(0, count);
+    if (m_state == state && m_count == normalized)
+        return;
+    m_state = state;
+    m_count = normalized;
+    if (stateBreathes(m_state)) {
         if (m_animation->state() != QAbstractAnimation::Running)
             m_animation->start();
         if (m_rippleAnimation->state() != QAbstractAnimation::Running)
@@ -42,12 +76,6 @@ void WatchBadge::setWatchedCount(int count)
         m_breath = 0.0;
         m_ripple = 0.0;
     }
-    update();
-}
-
-void WatchBadge::setFailedCount(int count)
-{
-    m_failed = qMax(0, count);
     update();
 }
 
@@ -85,15 +113,11 @@ void WatchBadge::paintEvent(QPaintEvent *)
     painter.setRenderHint(QPainter::Antialiasing, true);
     painter.setRenderHint(QPainter::TextAntialiasing, true);
 
-    // 徽标内的所有尺寸都按悬浮条“缩放”设置等比缩放：文字、圆点、呼吸光晕、
-    // 涟漪一起变大/变小（100 = 设计尺寸），不再写死像素。
     const qreal scale = m_scalePercent / 100.0;
-    const bool active = m_watched > 0;
-    const bool failed = m_failed > 0;
-    const QColor dotColor = active ? (failed ? theme::red() : theme::green())
-                                   : (theme::isDark() ? QColor(92, 97, 107) : QColor(148, 154, 164));
-    const qreal breath = active ? m_breath : 0.0;
-    const qreal ripple = active ? m_ripple : 0.0;
+    const bool breathing = stateBreathes(m_state);
+    const QColor dotColor = stateColor();
+    const qreal breath = breathing ? m_breath : 0.0;
+    const qreal ripple = breathing ? m_ripple : 0.0;
     const qreal cy = height() / 2.0;
     // 圆点固定尺寸（按缩放换算），避免文字左右跳动；布局按最大光晕预留，文字永远不动。
     const qreal dotRadius = 3.6 * scale;
@@ -102,7 +126,7 @@ void WatchBadge::paintEvent(QPaintEvent *)
     QFont textFont = font();
     textFont.setPixelSize(qBound(8, qRound(12.0 * scale), 20));
     const QFontMetricsF metrics(textFont);
-    const QString text = QStringLiteral("看守中 %1").arg(m_watched);
+    const QString text = activityStateText(m_state, m_count);
     const qreal textWidth = metrics.horizontalAdvance(text);
     const qreal gap = 7.0 * scale;
     const qreal contentWidth = layoutDotRadius * 2.0 + gap + textWidth;
@@ -110,7 +134,7 @@ void WatchBadge::paintEvent(QPaintEvent *)
     const qreal dotX = startX + layoutDotRadius;
     const qreal textX = dotX + layoutDotRadius + gap;
 
-    if (active) {
+    if (breathing) {
         // 呼吸光晕：一个扩张并淡出的软光斑 + 一圈向外扩散的细环（半径随缩放走）。
         const qreal glowRadius = (5.0 + 9.0 * breath) * scale;
         QRadialGradient gradient(QPointF(dotX, cy), glowRadius);
@@ -139,12 +163,12 @@ void WatchBadge::paintEvent(QPaintEvent *)
 
     painter.setPen(Qt::NoPen);
     QColor core = dotColor;
-    core.setAlphaF(active ? 0.9 : 0.85);
+    core.setAlphaF(breathing ? 0.9 : 0.85);
     painter.setBrush(core);
     painter.drawEllipse(QPointF(dotX, cy), dotRadius, dotRadius);
 
     painter.setFont(textFont);
-    painter.setPen(theme::textMuted());
+    painter.setPen(m_state == ActivityState::Idle ? theme::textDim() : theme::textMuted());
     const qreal baseline = (height() + metrics.ascent() - metrics.descent()) / 2.0;
     painter.drawText(QPointF(textX, baseline), text);
 }

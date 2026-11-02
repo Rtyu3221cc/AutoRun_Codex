@@ -15,6 +15,7 @@ struct RolloutState
     QString lastLimitMessage;
     bool running = false;     // 最近事件是 turn/task 开始且尚未结束
     qint64 lastEventAt = 0;   // epoch 秒
+    qint64 completedAt = 0;   // 最后一次正常完成（非限额失败）的 turn 时间，epoch 秒
     bool hasRateLimits = false;
     qint64 fiveHourResetAt = 0;
     qint64 weeklyResetAt = 0;

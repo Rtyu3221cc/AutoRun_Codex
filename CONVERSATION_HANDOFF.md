@@ -1,10 +1,10 @@
 # AutoRun Codex · 对话交接文档（换对话前先读我）
 
 > 用途：换新的 AI 对话时，把本文件路径发给新对话，就能接着干。
-> 最后更新：2026-11-02 13:00（JST）
+> 最后更新：2026-11-02 17:15（JST）
 > 项目路径：`D:\QtWorkspace\AutoRun_Codex`
 > 代码仓库：<https://github.com/Rtyu3221cc/AutoRun_Codex>（v0.1.8 首次上传）
-> 当前版本：**v0.1.9**（已 build + deploy 到 `dist\AutoRun_Codex.exe`；全新版需重启程序生效；已上传 GitHub Release）
+> 当前版本：**v0.1.10**（已 build + deploy 到 `dist\AutoRun_Codex.exe`；需重启程序生效；将上传 GitHub Release）
 > 技术细节看同目录 `HANDOFF.md`；本文件只记录“这个对话里做了什么、现在停在哪、下一段对话该怎么接”。
 
 ---
@@ -126,6 +126,27 @@ Windows 桌面小工具：通过本机 Codex CLI 的 app-server JSON-RPC 显示 
 - 验证：两个隔离 APPDATA + 伪造锁文件的回归（只等待 / 自动关闭），真实 ChatGPT 进程数前后一致（15 → 15）；测试开关写在 HANDOFF 5.10。
 - 发版：v0.1.9 已 build/deploy、打 zip 并上传 GitHub Release（v0.1.9）。
 
+### 1.6 活动指示灯 + 写锁提示改进（2026-11-02 16:50 ~ 17:15，v0.1.10）
+
+用户两条反馈：
+1. “等待写锁释放”提示太抽象，应该直接告诉用户去桌面版把当前对话关掉或切换一下；
+2. 呼吸灯（原“看守中 N”）意义不大——改成“当前是否有对话正在运行”的全局指示灯：
+   - 有对话在运行 → 绿黄（呼吸）
+   - 有对话在等待回复 → 黄色（呼吸）
+   - 有对话异常中断 → 红色（呼吸）
+   - 对话正常结束 → 蓝色（常亮）
+   - 若无法确认是否完成，但最近 5 分钟内有对话刚结束 → 绿色（常亮）
+   - 没有在活动的对话 → 灰色、不呼吸
+
+实现（v0.1.10）：
+- `ui/WatchBadge.*` 重写：不再显示“看守中 N”，改为“● 状态文字”（运行中/等待回复/异常中断/刚完成/最近结束/无活动对话）；颜色见上；只有“活动类”三种状态呼吸+涟漪，其余常亮/不呼吸；保留随悬浮条缩放等比缩放。
+- 数据：`RolloutState/ThreadInfo` 新增 `completedAt`（最后一次正常 task_complete 时间，由 RolloutScanner 解析）；`ui/MainWindow::computeActivityState()` 按 异常中断 > 运行中 > 等待回复 > 刚完成 > 最近结束 > 空闲 的优先级统计（`ignoredThreadIds` 不参与）；主窗口摘要追加「当前：…」，状态变化写日志。
+- “等待回复”= app-server thread 状态 active 但 rollout 最近没有写入（等模型回复/长思考）；“运行中”= rollout 最近仍在写。
+- 写锁提示（v0.1.10）：主窗口详情改成“在 Codex 桌面版里关闭这个对话或切换到其他对话/退出桌面版，写锁释放后 AutoRun 会自动继续”；日志每约 5 分钟提醒一次；旧版遗留的 writer-lock 红灯也会显示处理方法。
+- 顺手修：坏时间戳（晚于当前时间）会让活动指示灯永远停在“刚完成” → 在 scanner 和判定层都加了防御。
+- 验证：`AR_SCREENSHOT_FAKE_ACTIVITY=running|waiting|interrupted|completed|recent|idle` 截图 6 种状态（100% 与 50% 缩放），保存为 `docs/activity-indicator.png`；真实数据下日志正确出现“无活动对话/刚完成”。
+- 版本 0.1.10；将打 zip 发 GitHub Release。
+
 ---
 
 ## 2. 当前配置与实机状态（交接时）
@@ -137,25 +158,26 @@ Windows 桌面小工具：通过本机 Codex CLI 的 app-server JSON-RPC 显示 
 
 真实额度（11-01 23:30 左右抓取）：5h 剩余约 **67%**（11-02 02:06 重置）、每周剩余约 **30%**（11-04 15:37 重置）、plan=plus、重置卡 2 张（最近到期 11-07 00:34 ≈ 5.4 天，黄色档）。
 
-> **部署状态（2026-11-02 13:05 更新）**：v0.1.9 构建产物已放进 `dist\AutoRun_Codex.exe`（旧 v0.1.8 exe 改名 `dist\AutoRun_Codex.exe.old-v018`，当前运行中的 PID 15608 仍是 v0.1.8）。**退出托盘旧实例 → 重新启动 `dist\AutoRun_Codex.exe` 即为 v0.1.9**；之后可删 `.old-v018`。
-> v0.1.9 已同时打 win64 zip 并上传 GitHub Release：<https://github.com/Rtyu3221cc/AutoRun_Codex/releases/tag/v0.1.9>（asset SHA256 `71A6B50A...5EB51D`，详见 Release 说明）。
+> **部署状态（2026-11-02 17:20 更新）**：v0.1.10 构建产物已放进 `dist\AutoRun_Codex.exe`（旧 v0.1.9 exe 改名 `dist\AutoRun_Codex.exe.old-v019`；当前运行中的 PID 18764 是 v0.1.9）。**退出托盘旧实例 → 重新启动 `dist\AutoRun_Codex.exe` 即为 v0.1.10**；之后可删 `.old-v019`。
+> 用户已在 16:47 用 v0.1.9 重启过（所以设置里已有 `autoReleaseWriterLock = true`）。
+> v0.1.9 Release：<https://github.com/Rtyu3221cc/AutoRun_Codex/releases/tag/v0.1.9>；v0.1.10 发布记录见 Release 页面。
 
 ---
 
 ## 3. 看守队列当前状态（启动前必看！）
 
-`jobs.json` 里有 **1 条启用的单次看守**：
-- 线程：`01a18233-fcb8-7521-b2aa-3c90fb9ebb37`（完善云间日麻装扮与结算界面）
-- **当前 state=Failed（红灯）**：attempts=4、lastError=`恢复线程失败：thread ... already has an active writer`（2026-11-02 07:31 最后一次）；原因是 Codex 桌面版一直打开着该对话并持有 thread 写锁（详见 1.5）。
-- 该对话在 07:32 被用户手动在桌面版继续过、07:48 完成；所以这盏红灯只代表“自动续跑没成功”，不代表任务没继续。
-- v0.1.9 起不会再把它当失败；但**旧版本留下的 Failed 状态不会自动重试**（刻意不自动续跑已手动完成的对话）——重启 v0.1.9 后，如需看守请点一次“立即续跑”（会进入“等待写锁释放”，锁释放后自动继续）。
-- 交接时程序已启动且在运行（v0.1.8，`widgetScale = 90`）；重启后为 v0.1.9。
+`jobs.json` 里现在是 **1 条启用的单次看守**（用户已把之前那条 writer-lock 红灯任务移除/替换）：
+- 线程：`01a19b1f-e721-7d83-ab34-19a2882ee8aa`（生成云间日麻测试 APK）
+- state=Waiting、enabled=true、`nextTriggerAt = 0`（只登记，等该对话下次被额度限额打断时再按 resetAt+120s 排期；重启不会提前补跑）。
+- 之前那条 `01a18233…`（writer-lock 红灯）已不在队列；对应问题详见 1.5/1.6。
+- 交接时程序仍在运行 v0.1.9（PID 18764）；**需要重启一次才是 v0.1.10**（活动指示灯 + 写锁提示改进）。
 
 ---
 
 ## 4. 下一步建议
 
-1. **等用户验收 v0.1.9 写锁自愈**：重启到 v0.1.9 后，对一条看守点“立即续跑”——若桌面版正打开该对话，应显示“等待写锁释放”（不亮红灯）；关闭桌面版里的对话或离开电脑 5 分钟后，应自动续跑。也可在设置里关掉“自动关闭桌面版”验证纯等待模式。
+1. **等用户验收 v0.1.10 活动指示灯**：重启后看悬浮条底部：无对话活动时应为灰色“无活动对话”不呼吸；让 Codex 跑一个对话时变绿黄“运行中”；对话刚结束 5 分钟内变蓝“刚完成/最近结束”；有历史限额中断对话时为红“异常中断”。对照截图 `docs/activity-indicator.png`。
+2. **等用户验收 v0.1.9/v0.1.10 写锁提示**：对一条看守点“立即续跑”——若桌面版正打开该对话，主窗口详情应明确写“在桌面版里关闭这个对话或切换到其他对话/退出桌面版”，且不亮红灯；关闭对话/离开电脑 5 分钟后自动续跑。
 2. **等用户验收（上一轮遗留）**：悬浮条缩放（50%~150%，对比图 `docs/widget-scale-50.png`）、橙点间距（5px）、弹卡无橙点、账号头像/昵称展示；若想显示桌面 app 里的 “Changc” 昵称，需要再找字段或加“手动昵称”设置。
 3. 可选打磨：
    - 写锁冲突时加 Windows 托盘通知（“已自动关闭桌面版/正在等待写锁”），而不是只写日志；
@@ -208,6 +230,10 @@ D:\QtWorkspace\AutoRun_Codex\dist\AutoRun_Codex.exe
 - `core/JobEngine.*`：调度/等待/重试/红灯状态机；v0.1.9 新增写锁等待（writerBlocked）、`processWriterBlocked()`、`m_ownLoadedThreads`
 - `core/CodexWriterLock.*`（v0.1.9 新增）：thread 写锁探测、rollout 最近活动、系统空闲时间、关闭 Codex 桌面版
 - `ui/SettingsDialog.*` / `core/SettingsStore.*`：v0.1.9 新增 `autoReleaseWriterLock` 设置项
+- `ui/WatchBadge.*`（v0.1.10 重写）：悬浮条底部活动指示灯，6 种状态颜色/呼吸策略，`ActivityState` 由 `core/Types.h` 定义
+- `ui/MainWindow::computeActivityState()`（v0.1.10）：按优先级汇总线程活动状态；`AR_SCREENSHOT_FAKE_ACTIVITY` 可强制状态截图
+- `core/RolloutScanner.*` / `core/ThreadCatalog.*`：v0.1.10 新增 `completedAt`（最后一次正常 task_complete 时间）供“刚完成”判定
+- `ui/Theme.*`：v0.1.10 新增 `blue()`（正常结束状态色）
 
 ---
 
@@ -224,3 +250,4 @@ D:\QtWorkspace\AutoRun_Codex\dist\AutoRun_Codex.exe
 8. 深色主题下 `theme::yellow()` 是金黄 #F5B942；橙色小点用单独的 `theme::warningDot()`（#F59E0B），不要混用。
 9. 账号资料联网：只在本地头像缓存缺失/超过 7 天时发一次 profile GET + 图片 GET；`AR_PROFILE_OFFLINE=1` 可完全关闭。该接口是 ChatGPT 网页端接口（非 app-server 官方方法），只读、不影响额度，封号风险低但非零。
 10. 弹卡/主窗口标题的头像与昵称来自 `AccountProfileLoader`；主题切换时字母头像颜色由 `MainWindow::refreshAccountHeader()` 重新渲染。
+12. 活动指示灯（v0.1.10）是**推断**：“运行中”来自 rollout 文件活动、“等待回复”依赖 app-server active 状态 + rollout 写入间隔、“刚完成/最近结束”是 5 分钟窗口启发式；rollout 尾部截断/超长工具调用/坏时间戳会有偏差。被 `ignoredThreadIds` 忽略的对话不参与统计；很久以前限额中断未处理的对话会让灯一直红（提示去处理）。

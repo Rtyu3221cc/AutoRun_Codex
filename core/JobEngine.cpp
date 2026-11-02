@@ -390,12 +390,13 @@ void JobEngine::handleWriterBlocked(ResumeJob &job, const QString &error, bool a
     job.lastError = error;
     if (first) {
         emit logMessage(QStringLiteral(
-                                "「%1」的对话正被 Codex 桌面版占用（thread 写锁），本次不计失败次数；"
-                                "锁释放后会自动续跑%2")
+                                "「%1」被 Codex 桌面版占用（桌面版正打开着这个对话，AutoRun 无法同时续跑），"
+                                "本次不计失败次数。处理方法：在桌面版里关闭这个对话或切换到其他对话（也可以退出桌面版），"
+                                "写锁释放后会自动继续%2")
                                 .arg(job.threadName.isEmpty() ? job.threadId : job.threadName,
                                      m_autoReleaseWriterLock
-                                             ? QStringLiteral("（若你离开电脑，将自动关闭桌面版释放写锁）")
-                                             : QString()));
+                                             ? QStringLiteral("；若你离开电脑 ≥5 分钟，程序会自动关闭桌面版释放写锁")
+                                             : QStringLiteral("；设置里已关闭“自动关闭桌面版”")));
     }
     saveState();
     emit jobStateChanged(job.threadId);
@@ -422,28 +423,39 @@ void JobEngine::processWriterBlocked(ResumeJob &job)
         return;
     }
 
+    const QString name = job.threadName.isEmpty() ? job.threadId : job.threadName;
+    // 每隔约 5 分钟提示一次“仍需手动关闭桌面版里的对话”，避免用户不知道该怎么办。
+    const bool logHint = (now - job.writerBlockedSince > 0)
+            && ((now - job.writerBlockedSince) % 300 < 2);
+    auto logWaitHint = [this, name, logHint](const QString &extra) {
+        if (!logHint)
+            return;
+        emit logMessage(QStringLiteral("仍在等待「%1」的写锁释放：请在 Codex 桌面版里关闭这个对话（或切换到其他对话/退出桌面版）。%2")
+                                .arg(name, extra));
+    };
+
     // 仍在锁中：保持轮询（下一次 tick 继续检查，锁释放可秒级恢复）。
     if (!m_autoReleaseWriterLock) {
+        logWaitHint(QStringLiteral("（设置里已关闭自动关闭桌面版）"));
         job.nextTriggerAt = now + m_writerPollSeconds;
         saveState();
         return;
     }
     if (job.writerReleaseAttempted) {
         // 已尝试过关闭桌面版：继续等锁自然释放，不再重复杀进程。
+        logWaitHint(QStringLiteral("（程序已尝试关闭桌面版，若仍在运行请手动退出）"));
         job.nextTriggerAt = now + m_writerPollSeconds;
         saveState();
         return;
     }
-    if (now - job.writerBlockedSince < m_writerGraceSeconds)
+    if (now - job.writerBlockedSince < m_writerGraceSeconds) {
+        logWaitHint(QStringLiteral("（程序稍后会按设置处理）"));
         return; // 宽限期内先等用户自己关闭
+    }
 
     // 目标对话仍在跑 turn（rollout 仍在写）时不能抢锁，否则会打断桌面版正在执行的任务。
     if (isThreadRecentlyActive(job.threadId, 90)) {
-        if (now - job.writerBlockedSince >= m_writerGraceSeconds
-            && (now - job.writerBlockedSince) % qMax(1, m_writerPollSeconds * 4) < 2) {
-            emit logMessage(QStringLiteral("「%1」仍在 Codex 桌面版里运行，暂不关闭桌面版，等待其空闲")
-                                    .arg(job.threadName.isEmpty() ? job.threadId : job.threadName));
-        }
+        logWaitHint(QStringLiteral("（该对话仍在桌面版里运行，等它空闲）"));
         job.nextTriggerAt = now + m_writerPollSeconds;
         saveState();
         return;
@@ -451,6 +463,7 @@ void JobEngine::processWriterBlocked(ResumeJob &job)
 
     // 用户还在电脑前时不要突然关掉桌面版（可用 AR_WRITER_IGNORE_USER_IDLE 测试时跳过）。
     if (m_respectUserIdle && systemIdleSeconds() < static_cast<quint64>(m_writerIdleSeconds)) {
+        logWaitHint(QStringLiteral("（你正在使用电脑，程序暂不自动关闭桌面版）"));
         job.nextTriggerAt = now + m_writerPollSeconds;
         saveState();
         return;

@@ -58,6 +58,7 @@ QColor yellow()
     return g_dark ? QColor(245, 185, 66) : QColor(234, 151, 9);
 }
 QColor red() { return QColor(242, 85, 90); }
+QColor blue() { return g_dark ? QColor(96, 165, 250) : QColor(37, 99, 235); }
 QColor track() { return g_dark ? QColor(255, 255, 255, 22) : QColor(0, 0, 0, 22); }
 
 QColor warningDot()

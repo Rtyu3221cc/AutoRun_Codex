@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/Types.h"
+
 #include <QColor>
 #include <QWidget>
 
@@ -7,7 +9,10 @@ class QPropertyAnimation;
 
 namespace arc {
 
-// “● 看守中 N”徽标：呼吸点带光晕和缓动动画。
+// 悬浮条底部“● 活动状态”指示灯（全局，不是单个看守任务的状态）：
+//   运行中（绿黄呼吸）/ 等待回复（黄色呼吸）/ 异常中断（红色呼吸）/
+//   刚完成（蓝色常亮）/ 最近结束（绿色常亮）/ 无活动对话（灰色、不呼吸）。
+// 文字+呼吸点随“悬浮条缩放”设置整体等比缩放（100 = 设计尺寸）。
 class WatchBadge : public QWidget
 {
     Q_OBJECT
@@ -17,12 +22,12 @@ class WatchBadge : public QWidget
 public:
     explicit WatchBadge(QWidget *parent = nullptr);
 
-    void setWatchedCount(int count);
-    // 续跑重试耗尽后看守灯由绿变红。
-    void setFailedCount(int count);
-    // 随悬浮条“缩放”设置整体等比缩放（文字、圆点、呼吸光晕、涟漪一起变），100 = 设计尺寸。
+    void setActivity(ActivityState state, int count);
+    ActivityState activity() const { return m_state; }
+
     void setScalePercent(int percent);
     int scalePercent() const { return m_scalePercent; }
+
     qreal breath() const { return m_breath; }
     void setBreath(qreal value);
     qreal ripple() const { return m_ripple; }
@@ -34,8 +39,11 @@ protected:
     void paintEvent(QPaintEvent *event) override;
 
 private:
-    int m_watched = 0;
-    int m_failed = 0;
+    QColor stateColor() const;
+    static bool stateBreathes(ActivityState state);
+
+    ActivityState m_state = ActivityState::Idle;
+    int m_count = 0;
     int m_scalePercent = 100;
     qreal m_breath = 0.0;
     qreal m_ripple = 0.0;

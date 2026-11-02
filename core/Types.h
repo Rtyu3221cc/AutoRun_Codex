@@ -147,11 +147,46 @@ struct ThreadInfo
     qint64 resetAt = 0; // 预计额度恢复时间（epoch 秒）
     bool running = false;
     qint64 lastEventAt = 0;
+    qint64 completedAt = 0; // 最后一次“正常完成”的 turn 时间（epoch 秒；0=未知）
     QString lastLimitMessage;
 
     bool hasJob = false;
     QString jobSummary;
 };
+
+// ---------------------------------------------------------------------------
+// 悬浮窗“活动指示灯”
+// ---------------------------------------------------------------------------
+
+// 全局活动状态（按优先级取最高的一项；不是每个对话单独显示）。
+enum class ActivityState {
+    Idle,          // 没有在活动的对话（灰色、不呼吸）
+    Running,       // 有对话正在运行/执行（绿黄呼吸）
+    WaitingReply,  // 有对话已开始 turn、正在等模型回复/长时间思考（黄色呼吸）
+    Interrupted,   // 有对话异常中断（限额中断等，红色呼吸）
+    Completed,     // 最近有对话正常结束（蓝色常亮）
+    RecentlyEnded  // 最近有对话活动停止、但无法确认是否正常完成（绿色常亮，兜底）
+};
+
+inline QString activityStateText(ActivityState state, int count)
+{
+    const int n = qMax(0, count);
+    switch (state) {
+    case ActivityState::Running:
+        return n > 1 ? QStringLiteral("运行中 %1").arg(n) : QStringLiteral("运行中");
+    case ActivityState::WaitingReply:
+        return QStringLiteral("等待回复");
+    case ActivityState::Interrupted:
+        return n > 1 ? QStringLiteral("异常中断 %1").arg(n) : QStringLiteral("异常中断");
+    case ActivityState::Completed:
+        return n > 1 ? QStringLiteral("刚完成 %1").arg(n) : QStringLiteral("刚完成");
+    case ActivityState::RecentlyEnded:
+        return n > 1 ? QStringLiteral("最近结束 %1").arg(n) : QStringLiteral("最近结束");
+    case ActivityState::Idle:
+        break;
+    }
+    return QStringLiteral("无活动对话");
+}
 
 // ---------------------------------------------------------------------------
 // Jobs
