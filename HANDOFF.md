@@ -335,10 +335,9 @@ AutoRun_Codex.exe
 `state` 枚举：Disabled=0, Waiting=1, Ready=2, Running=3, Succeeded=4, Failed=5, Paused=6。
 
 ### 6.3 当前运行状态（交接时）
-- **已部署 v0.1.12** 到 `dist\AutoRun_Codex.exe`（2026-11-02 20:4x 替换；旧 v0.1.11 exe 备份为 `dist\AutoRun_Codex.exe.old-v011`）。当前运行中的 PID 18676 仍是 **v0.1.10**（17:17 启动，用户之后一直没重启），**退出托盘旧实例重启后才是 v0.1.12**；dist 里还有 v0.1.10 的备份 `.old-v010`（正在运行的镜像）。
-- settings.json：`uiTheme=dark`、`widgetScale=90`、`autoReleaseWriterLock=true`、`displayRemaining=true`、`jitterSeconds=120`、`retryAttempts=3`；重启后会用默认 `trayNotifications=true`（旧配置无该字段）。
-- 当前看守队列（交接时）：线程 `01a19b1f…`（生成云间日麻测试 APK），单次模式、状态 Waiting、`nextTriggerAt = 0`（只登记，等该对话下次被限额打断再排期）。
-- 之前那条 v0.1.8 遗留的 writer-lock 红灯（线程 `01a18233…`）已被用户移除/替换，不再是当前队列。
+- **当前运行 v0.1.12**：`dist\AutoRun_Codex.exe`（PID 6844，2026-11-03 01:07:38 启动）。用户已重启，v0.1.12 生效；dist 里只剩 v0.1.12 exe，旧备份 `.old-v010` / `.old-v011` 已清理。
+- settings.json：`uiTheme=dark`、`widgetScale=90`、`autoReleaseWriterLock=true`、`trayNotifications=true`、`displayRemaining=true`、`jitterSeconds=120`、`retryAttempts=3`。
+- 当前看守队列：**空**（jobs.json = `[]`）。原“生成云间日麻测试 APK”的看守已在 2026-11-03 01:07:55 被用户取消；已无 Waiting/Failed 任务。
 - 最近额度（2026-11-02 17:01 JST 主窗口截图）：5h 剩余约 41%（18:08 重置）、每周剩余约 8%（11-04 15:37 重置）、plan=plus、重置卡 3 张。界面为深色主题；启动日志显示 `活动指示灯：无活动对话`。
 - 发布状态：GitHub Release v0.1.11 已发布（<https://github.com/Rtyu3221cc/AutoRun_Codex/releases/tag/v0.1.11>；asset 与 SHA256 见 Release 页面或 `release\AutoRun_Codex-v0.1.11-win64.zip.sha256`）。
 - 注意：如果某条看守的 nextTriggerAt 已过（>0 且小于当前时间），启动后会“补跑”一次；本机当前那条是 0，所以不会。
@@ -379,6 +378,10 @@ AutoRun_Codex.exe
    - 日志验证：`[job] ... 被 Codex 桌面版占用 ... / 已自动关闭 Codex 桌面版 ... / 写锁已释放，立即续跑` 均落盘到 auto-run-codex.log。
 13. **活动指示灯验证（v0.1.10）**：隔离 APPDATA + `AR_SCREENSHOT_FAKE_ACTIVITY` 分别渲染 6 种状态（100% / 50% 缩放均检查文字不溢出），见 `docs/activity-indicator.png`；真实数据下启动后日志出现 `活动指示灯：无活动对话` → `活动指示灯：完成`（5 分钟内有对话正常结束），并修复过一处“未来时间戳导致永远显示完成”的判定 bug。
 14. **托盘通知与经典样式修复验证（v0.1.12）**：截图模式渲染经典样式 50%（短标题“5h/周”、隐藏倒计时、文字不压描边）、70%/100%（正常显示）与参考样式 50%（不受影响），见 `docs/classic-widget-50.png`；设置对话框截图确认“续跑/写锁状态变化时显示 Windows 托盘通知”复选框；隔离 APPDATA + 假锁触发写锁等待，托盘通知路径无崩溃。
+15. **生产环境验证（v0.1.12 运行中，2026-11-03）**：
+   - 2026-11-02 21:10 一条看守因限额中断并排期 23:16 续跑；2026-11-03 01:07 重启 v0.1.12 后首次尝试时桌面版正打开该对话，日志正确进入“等待写锁释放”，**未亮红灯、未消耗重试次数**；01:07:55 用户选择取消该看守；
+   - 活动指示灯真实切换记录：运行中 → 完成 → 无活动对话（14:16/14:21）、15:17 再次运行中；此前也出现过“最近结束/异常中断”兜底状态；
+   - 上述均可在 `%APPDATA%\AutoRun_Codex\auto-run-codex.log` 检索 `[job] 活动指示灯：…` / 写锁 关键字复核。
 
 ---
 
